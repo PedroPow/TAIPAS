@@ -1,12 +1,3 @@
-# bot_set_complete.py
-# 🔥 BOT COMPLETO E OTIMIZADO (versão final)
-# Requer: discord.py 2.3+, python 3.10+ recommended
-# Como usar:
-# 1) Instale: pip install -U "discord.py[voice]" (ou apenas discord.py)
-# 2) Crie um arquivo .env com TOKEN=seu_token (ou defina variavel de ambiente)
-# 3) Ajuste os IDs nas configurações abaixo
-# 4) Rode: python bot_set_complete.py
-
 import os
 import json
 import asyncio
@@ -68,6 +59,39 @@ NICK_FORMAT = "{id} | {vulgo}"
 
 # Timeout para respostas (em segundos)
 RESPONSE_TIMEOUT = 300
+
+# ===========================================================
+# ============= FUNÇÃO POS_SETAGEM — ENTREGA CARGO ==========
+# ===========================================================
+
+async def POS_SETAGEM(interaction, membro_id: int, cargo_aprovado_id: int):
+    guild = interaction.guild
+    if guild is None:
+        return await interaction.response.send_message("Erro: guild não encontrada.", ephemeral=True)
+
+    membro = guild.get_member(membro_id)
+    if membro is None:
+        return await interaction.response.send_message("Erro: usuário não encontrado no servidor.", ephemeral=True)
+
+    cargo = guild.get_role(cargo_aprovado_id)
+    if cargo is None:
+        return await interaction.response.send_message("Erro: cargo configurado não existe.", ephemeral=True)
+
+    try:
+        await membro.add_roles(cargo, reason="SET aprovado")
+    except Exception as e:
+        return await interaction.response.send_message(
+            f"Não consegui dar o cargo. Erro:\n```\n{e}\n```",
+            ephemeral=True
+        )
+
+    await interaction.response.send_message(
+        f"✅ Cargo **{cargo.name}** entregue para **{membro.mention}**.",
+        ephemeral=True
+    )
+
+    print(f"[POS_SETAGEM] Cargo {cargo.name} entregue ao membro {membro} ({membro.id})")
+
 
 # ===========================================================
 # =========== Inicialização do bot e utilitários ============
@@ -256,17 +280,10 @@ class SelectEtapa1(View):
 
 
 class ApproveDenyView(View):
-    """
-    View com botões de Aprovar / Recusar.
-    Criada por set enviado; ao criar armazenamos staff_message_id para persistir.
-    """
     def __init__(self, data: dict):
         super().__init__(timeout=None)
         self.data = data
-
-        # Observação: para persistência após restart, re-criaremos instâncias a partir do pending_sets.json
-        # custom_id feito automaticamente pelo discord.py se não informado; persistência do callback é
-        # garantida por `bot.add_view(view_instance)` no on_ready ao restaurar pendings.
+        self.membro_id = data.get("user_id")  # Agora está certo
 
     async def _authorized_or_reply(self, interaction: discord.Interaction) -> bool:
         if not is_approver(interaction.user):
@@ -274,82 +291,88 @@ class ApproveDenyView(View):
             return False
         return True
 
-@discord.ui.button(label="✔️ ACEITAR", style=discord.ButtonStyle.green)
-async def aceitar(self, interaction: discord.Interaction, button: Button):
-    if not await self._authorized_or_reply(interaction):
-        return
+    @discord.ui.button(label="✔️ ACEITAR", style=discord.ButtonStyle.green)
+    async def aceitar(self, interaction: discord.Interaction, button: Button):
+        if not await self._authorized_or_reply(interaction):
+            return
 
-    await interaction.response.defer(ephemeral=True)
+        ID_DO_CARGO_APROVADO = 1446721622466629713
 
+        await POS_SETAGEM(
+            interaction=interaction,
+            data=self.data,
+            membro_id=self.membro_id,
+            cargo_aprovado_id=ID_DO_CARGO_APROVADO
+        )
+
+        await interaction.response.send_message(
+            f"SET aprovado! Cargo entregue para <@{self.membro_id}>.",
+            ephemeral=True
+        )
+
+async def POS_SETAGEM(interaction: discord.Interaction, data: dict, membro_id: int, cargo_aprovado_id: int):
     guild = interaction.guild
-    member = guild.get_member(self.data["user_id"])
+
+    # ================= OBTER O MEMBRO =================
+    member = guild.get_member(membro_id)
     if member is None:
         try:
-            member = await guild.fetch_member(self.data["user_id"])
-        except Exception as e:
-            print(f"[ERRO] não consegui obter o membro {self.data['user_id']}: {e}")
-            return await interaction.followup.send("❌ Não foi possível encontrar o usuário no servidor.", ephemeral=True)
+            member = await guild.fetch_member(membro_id)
+        except:
+            return await interaction.followup.send("❌ Não encontrei o membro no servidor.", ephemeral=True)
 
-    ticket_ch = guild.get_channel(self.data["ticket_channel_id"])
-
-    # remover cargo inicial
-    if CARGO_INICIAL:
+    # ================= CARGO DE APROVADO =================
+    cargo_aprovado = guild.get_role(cargo_aprovado_id)
+    if cargo_aprovado:
         try:
-            role_ini = guild.get_role(CARGO_INICIAL)
-            if role_ini:
-                await member.remove_roles(role_ini, reason="SET aprovado")
+            await member.add_roles(cargo_aprovado, reason="SET aprovado")
         except Exception as e:
-            print(f"[WARN] falha ao remover cargo inicial: {e}")
+            return await interaction.followup.send(f"❌ Erro ao adicionar cargo aprovado: {e}", ephemeral=True)
+    else:
+        return await interaction.followup.send("❌ Cargo aprovado não existe no servidor!", ephemeral=True)
 
-    # =============== ADICIONAR CARGOS ===============
-
-    # 1) Cargo da Função
-    try:
-        funcao_id = CARGO_MAP.get(self.data["cargo"])
-        if funcao_id:
-            funcao_role = guild.get_role(funcao_id)
-            if funcao_role:
-                await member.add_roles(funcao_role, reason="SET aprovado - cargo da função")
-    except Exception as e:
-        print(f"[ERRO] erro ao adicionar cargo de função: {e}")
-
-    # 2) Cargo da Quebrada
-    try:
-        quebrada_id = QUEBRADA_MAP.get(self.data["quebrada"])
-        if quebrada_id:
-            quebrada_role = guild.get_role(quebrada_id)
-            if quebrada_role:
-                await member.add_roles(quebrada_role, reason="SET aprovado - quebrada")
-    except Exception as e:
-        print(f"[ERRO] erro ao adicionar cargo de quebrada: {e}")
-
-    # === DAR CARGO DE APROVADO ===
-    try:
-        membro = guild.get_member(self.data["user_id"])
-        if membro is None:
-            membro = await guild.fetch_member(self.data["user_id"])
-    except:
-        membro = None
-
-    if membro:
-        approved_role_id = 1446982320547561595
-        approved_role = guild.get_role(approved_role_id)
-
-        if approved_role:
+    # ================= REMOVER CARGO INICIAL =================
+    if CARGO_INICIAL:
+        role = guild.get_role(CARGO_INICIAL)
+        if role:
             try:
-                await membro.add_roles(approved_role, reason="SET aprovado - cargo aprovado")
-                print(f"[SET] Cargo APROVADO adicionado a {membro}.")
+                await member.remove_roles(role)
             except Exception as e:
-                print(f"[ERRO] Falha ao dar cargo aprovado: {e}")
-        else:
-            print("[ERRO] Cargo de aprovado não encontrado no servidor!")
+                print(f"[WARN] Falha ao remover cargo inicial: {e}")
 
+    # ================= CARGO DA FUNÇÃO =================
+    funcao_role_id = CARGO_MAP.get(data["cargo"])
+    if funcao_role_id:
+        role = guild.get_role(funcao_role_id)
+        if role:
+            try:
+                await member.add_roles(role, reason="SET aprovado - função")
+            except Exception as e:
+                print(f"[ERRO] Cargo função: {e}")
+
+    # ================= CARGO DA QUEBRADA =================
+    quebrada_role_id = QUEBRADA_MAP.get(data["quebrada"])
+    if quebrada_role_id:
+        role = guild.get_role(quebrada_role_id)
+        if role:
+            try:
+                await member.add_roles(role, reason="SET aprovado - quebrada")
+            except Exception as e:
+                print(f"[ERRO] Cargo quebrada: {e}")
+
+    # ================= CARGO FINAL DE APROVADO =================
+    approved_role = guild.get_role(1446982320547561595)
+    if approved_role:
+        try:
+            await member.add_roles(approved_role, reason="SET aprovado - Final")
+        except Exception as e:
+            print(f"[ERRO] Falha cargo final aprovado: {e}")
 
 
     # =============== RENOMEAR ===============
     try:
         await member.edit(
-            nick=NICK_FORMAT.format(id=self.data["idd"], vulgo=self.data["vulgo"]),
+            nick=NICK_FORMAT.format(id=data["idd"], vulgo=data["vulgo"]),
             reason="SET aprovado"
         )
     except Exception as e:
@@ -371,7 +394,8 @@ async def aceitar(self, interaction: discord.Interaction, button: Button):
     try:
         log_ch = guild.get_channel(LOG_CHANNEL_ID)
         if log_ch:
-            log_embed = make_embed("🟢 SET APROVADO",
+            log_embed = make_embed(
+                "🟢 SET APROVADO",
                 f"Aprovado por: {interaction.user.mention}\nMembro: {member.mention}"
             )
             await log_ch.send(embed=log_embed)
@@ -380,24 +404,23 @@ async def aceitar(self, interaction: discord.Interaction, button: Button):
 
     # =============== FECHAR TICKET ===============
     try:
+        ticket_ch = guild.get_channel(data["ticket_channel_id"])
         if ticket_ch:
             await ticket_ch.delete(reason="SET aprovado")
-    except:
-        pass
+    except Exception as e:
+        print(f"[WARN] erro ao fechar ticket: {e}")
 
     # remover pendência
-    remove_pending_by_ticket(self.data["ticket_channel_id"])
+    remove_pending_by_ticket(data["ticket_channel_id"])
 
-    # desabilitar botões
-    self.clear_items()
+    # desabilitar botões na mensagem original
     try:
-        await interaction.message.edit(view=self)
+        view = interaction.message.components
+        await interaction.message.edit(view=None)
     except:
         pass
 
     await interaction.followup.send("✔️ SET aprovado com sucesso.", ephemeral=True)
-
-
 
 
     @discord.ui.button(label="❌ RECUSAR", style=discord.ButtonStyle.red)
