@@ -309,6 +309,15 @@ class ApproveDenyView(View):
         except Exception:
             pass
 
+                # adiciona cargo APROVADO FIXO (1446721622466629713)
+        try:
+            cargo_aprovado = guild.get_role(1446721622466629713)
+            if cargo_aprovado and member:
+                await member.add_roles(cargo_aprovado, reason="SET aprovado - cargo padrão de aprovados")
+        except Exception:
+            pass
+
+
         # renomeia (se possível)
         if member:
             try:
@@ -318,7 +327,7 @@ class ApproveDenyView(View):
 
         # DM sucesso (tenta com logo)
         try:
-            embed_dm = make_embed("✅ SET APROVADO", f"Parabéns {member.mention if member else self.data['user_name']}! Seu SET foi aprovado.")
+            embed_dm = make_embed("✅ SET APROVADO", f"Parabéns {member.mention if member else self.data['user_name']}! Seu SET foi aprovado. Sejá Bem-vindo á Familía irmão.")
             if os.path.exists(LOGO_PATH):
                 file = discord.File(LOGO_PATH, filename=LOGO_FILENAME)
                 if member:
