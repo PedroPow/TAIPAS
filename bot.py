@@ -20,7 +20,7 @@ from discord.ui import View, Button, Select, Modal, TextInput
 
 # ========== CONFIGURAÇÕES - ajuste estes valores ==========
 # Use TOKEN via env var por segurança (ex: export TOKEN="seu_token")
-TOKEN = os.getenv("TOKEN") or "TOKEN"
+TOKEN = os.getenv("TOKEN") or "MTM0OTU1OTU5NTA2NDA5ODg4OA.GuNm4c.apESDYag98R5QW933ucUrVgn-pK8wLOjtf2GgU"
 
 # IDs (preencha com seus IDs)
 GUILD_ID = 1445599273595961546  # ID do servidor (opcional, facilita sync se quiser)
@@ -144,20 +144,6 @@ async def safe_send(channel: discord.abc.Messageable, embed: discord.Embed, file
 # ===========================================================
 # ========== Views / Modal / Buttons (fluxo SET) ============
 # ===========================================================
-
-async def dar_cargo_aprovado(member: discord.Member):
-    try:
-        cargo = member.guild.get_role(1446721622466629713)
-        if cargo is None:
-            print("❌ Cargo não encontrado no servidor.")
-            return
-        
-        await member.add_roles(cargo, reason="SET aprovado")
-        print(f"✅ Cargo aplicado: {member} recebeu {cargo.name}")
-
-    except Exception as e:
-        print(f"Erro ao adicionar cargo: {e}")
-
 
 class ModalSetFinal(Modal, title="📑 Finalizar SET"):
     nome = TextInput(label="Nome Completo", placeholder="Seu nome completo", max_length=100)
@@ -289,9 +275,6 @@ class ApproveDenyView(View):
     @discord.ui.button(label="✔️ ACEITAR", style=discord.ButtonStyle.green)
     async def aceitar(self, interaction: discord.Interaction, button: Button):
         if not await self._authorized_or_reply(interaction): return
-
-        await dar_cargo_aprovado(member)
-
 
         guild = interaction.guild
         member = guild.get_member(self.data["user_id"])
