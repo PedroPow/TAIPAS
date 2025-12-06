@@ -272,115 +272,168 @@ class ApproveDenyView(View):
             return False
         return True
 
-    @discord.ui.button(label="✔️ ACEITAR", style=discord.ButtonStyle.green)
-    async def aceitar(self, interaction: discord.Interaction, button: Button):
-        if not await self._authorized_or_reply(interaction): return
+@discord.ui.button(label="✔️ ACEITAR", style=discord.ButtonStyle.green)
+async def aceitar(self, interaction: discord.Interaction, button: Button):
+    if not await self._authorized_or_reply(interaction):
+        return
 
-        guild = interaction.guild
-        member = guild.get_member(self.data["user_id"])
-        ticket_ch = guild.get_channel(self.data["ticket_channel_id"])
+    await interaction.response.defer(ephemeral=True)  # dá um tempo para processar
 
-        # remove cargo inicial se configurado
-        if CARGO_INICIAL:
-            try:
-                role_ini = guild.get_role(CARGO_INICIAL)
-                if role_ini and member:
-                    await member.remove_roles(role_ini, reason="SET aprovado")
-            except Exception:
-                pass
-
-        # adiciona cargo da função (se configurado)
+    guild = interaction.guild
+    member = guild.get_member(self.data["user_id"])
+    # se get_member retornar None (cache), buscar via API
+    if member is None:
         try:
-            role_id = CARGO_MAP.get(self.data["cargo"], 0)
-            if role_id:
-                role = guild.get_role(role_id)
+            member = await guild.fetch_member(self.data["user_id"])
+        except Exception as e:
+            print(f"[ERRO] não consegui obter o membro {self.data['user_id']}: {e}")
+            return await interaction.followup.send("❌ Não foi possível encontrar o usuário no servidor.", ephemeral=True)
+
+    ticket_ch = guild.get_channel(self.data["ticket_channel_id"])
+
+    # remove cargo inicial se configurado
+    if CARGO_INICIAL:
+        try:
+            role_ini = guild.get_role(CARGO_INICIAL)
+            if role_ini and member:
+                await member.remove_roles(role_ini, reason="SET aprovado")
+        except Exception as e:
+            print(f"[WARN] falha ao remover cargo inicial: {e}")
+
+    # função auxiliar para adicionar role com checagens
+    async def try_add_role(role_id: int, reason: str) -> bool:
+        if not role_id:
+            return False
+        role = guild.get_role(role_id)
+        if role is None:
+            print(f"[WARN] role id {role_id} não existe no servidor.")
+            return False
+        # checar permissões/hierarquia do bot
+        me = guild.me
+        if not me.guild_permissions.manage_roles:
+            print("[ERRO] bot não tem permission manage_roles")
+            return False
+        if role.position >= me.top_role.position:
+            print(f"[ERRO] não posso gerenciar o role {role.name} porque está acima ou no mesmo nível que meu top role.")
+            return False
+        try:
+            await member.add_roles(role, reason=reason)
+            return True
+        except Exception as e:
+            print(f"[ERRO] falha ao adicionar role {role.name} a {member}: {e}")
+            return False
+
+    # adiciona cargo da função (se configurado)
+    try:
+        role_id = CARGO_MAP.get(self.data["cargo"], 0)
+        if role_id:
+            ok = await try_add_role(role_id, "SET aprovado - cargo")
+            if not ok:
+                # log opcional
+                pass
+    except Exception as e:
+        print(f"[WARN] erro ao adicionar cargo da função: {e}")
+
+    # adiciona cargo da quebrada (se configurado)
+    try:
+        qrole_id = QUEBRADA_MAP.get(self.data["quebrada"], 0)
+        if qrole_id:
+            ok = await try_add_role(qrole_id, "SET aprovado - quebrada")
+            if not ok:
+                pass
+    except Exception as e:
+        print(f"[WARN] erro ao adicionar cargo da quebrada: {e}")
+
+    # --- AQUI: adiciona o CARGO APROVADO FIXO ---
+    try:
+        APPROVED_ROLE_ID = 1446721622466629713
+        ok = await try_add_role(APPROVED_ROLE_ID, "SET aprovado - cargo aprovado fixo")
+        if not ok:
+            # tentar sem checagem extra (última tentativa), só por garantia
+            try:
+                role = guild.get_role(APPROVED_ROLE_ID)
                 if role and member:
-                    await member.add_roles(role, reason="SET aprovado - cargo")
-        except Exception:
-            pass
-
-        # adiciona cargo da quebrada (se configurado)
-        try:
-            qrole_id = QUEBRADA_MAP.get(self.data["quebrada"], 0)
-            if qrole_id:
-                qrole = guild.get_role(qrole_id)
-                if qrole and member:
-                    await member.add_roles(qrole, reason="SET aprovado - quebrada")
-        except Exception:
-            pass
-
-                # adiciona cargo APROVADO FIXO (1446721622466629713)
-        try:
-            cargo_aprovado = guild.get_role(1446721622466629713)
-            if cargo_aprovado and member:
-                await member.add_roles(cargo_aprovado, reason="SET aprovado - cargo padrão de aprovados")
-        except Exception:
-            pass
-
-
-        # renomeia (se possível)
-        if member:
-            try:
-                await member.edit(nick=NICK_FORMAT.format(id=self.data["idd"], vulgo=self.data["vulgo"]), reason="SET aprovado")
-            except Exception:
-                pass
-
-        # DM sucesso (tenta com logo)
-        try:
-            embed_dm = make_embed("✅ SET APROVADO", f"Parabéns {member.mention if member else self.data['user_name']}! Seu SET foi aprovado. Sejá Bem-vindo á Familía irmão.")
-            if os.path.exists(LOGO_PATH):
-                file = discord.File(LOGO_PATH, filename=LOGO_FILENAME)
-                if member:
-                    try:
-                        await member.send(embed=embed_dm, file=file)
-                    except Exception:
-                        pass
-            else:
-                if member:
-                    try:
-                        await member.send(embed=embed_dm)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # log para canal de logs (detalhado)
+                    await member.add_roles(role, reason="SET aprovado - tentativa fallback")
+                    ok = True
+            except Exception as e:
+                print(f"[ERRO] tentativa fallback adicionar cargo aprovado falhou: {e}")
+        # opcional: logar no canal de logs se quiser
         try:
             log_ch = guild.get_channel(LOG_CHANNEL_ID)
             if log_ch:
-                log_embed = make_embed("🟢 SET APROVADO", f"Aprovado por: {interaction.user.mention}\nMembro: <@{self.data['user_id']}>")
-                log_embed.add_field(name="Nome", value=self.data.get("nome","—"), inline=True)
-                log_embed.add_field(name="Vulgo", value=self.data.get("vulgo","—"), inline=True)
-                log_embed.add_field(name="ID", value=self.data.get("idd","—"), inline=True)
-                log_embed.add_field(name="Cargo", value=self.data.get("cargo","—"), inline=True)
-                log_embed.add_field(name="Quebrada", value=self.data.get("quebrada","—"), inline=True)
-                log_embed.add_field(name="Ticket", value=f"<#{self.data['ticket_channel_id']}>", inline=False)
-                if os.path.exists(LOGO_PATH):
-                    try:
-                        await log_ch.send(embed=log_embed, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-                    except:
-                        await log_ch.send(embed=log_embed)
-                else:
+                status = "✅" if ok else "❌"
+                embed = make_embed("Cargo Aprovado Aplicado" if ok else "Falha ao aplicar cargo aprovado",
+                                   f"{status} Usuário: {member.mention}\nCargo alvo ID: `{APPROVED_ROLE_ID}`")
+                await log_ch.send(embed=embed)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[WARN] erro ao aplicar cargo aprovado fixo: {e}")
+
+    # renomeia (se possível)
+    if member:
+        try:
+            await member.edit(nick=NICK_FORMAT.format(id=self.data["idd"], vulgo=self.data["vulgo"]), reason="SET aprovado")
+        except Exception:
+            pass
+
+    # DM sucesso (tenta com logo)
+    try:
+        embed_dm = make_embed("✅ SET APROVADO", f"Parabéns {member.mention if member else self.data['user_name']}! Seu SET foi aprovado. Seja bem-vindo à família.")
+        if os.path.exists(LOGO_PATH):
+            file = discord.File(LOGO_PATH, filename=LOGO_FILENAME)
+            if member:
+                try:
+                    await member.send(embed=embed_dm, file=file)
+                except Exception:
+                    pass
+        else:
+            if member:
+                try:
+                    await member.send(embed=embed_dm)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # log para canal de logs (detalhado)
+    try:
+        log_ch = guild.get_channel(LOG_CHANNEL_ID)
+        if log_ch:
+            log_embed = make_embed("🟢 SET APROVADO", f"Aprovado por: {interaction.user.mention}\nMembro: <@{self.data['user_id']}>")
+            log_embed.add_field(name="Nome", value=self.data.get("nome","—"), inline=True)
+            log_embed.add_field(name="Vulgo", value=self.data.get("vulgo","—"), inline=True)
+            log_embed.add_field(name="ID", value=self.data.get("idd","—"), inline=True)
+            log_embed.add_field(name="Cargo", value=self.data.get("cargo","—"), inline=True)
+            log_embed.add_field(name="Quebrada", value=self.data.get("quebrada","—"), inline=True)
+            log_embed.add_field(name="Ticket", value=f"<#{self.data['ticket_channel_id']}>", inline=False)
+            if os.path.exists(LOGO_PATH):
+                try:
+                    await log_ch.send(embed=log_embed, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
+                except:
                     await log_ch.send(embed=log_embed)
-        except Exception:
-            pass
+            else:
+                await log_ch.send(embed=log_embed)
+    except Exception:
+        pass
 
-        # fecha ticket
-        try:
-            if ticket_ch:
-                await ticket_ch.delete(reason="SET aprovado - encerrando ticket")
-        except Exception:
-            pass
+    # fecha ticket
+    try:
+        if ticket_ch:
+            await ticket_ch.delete(reason="SET aprovado - encerrando ticket")
+    except Exception:
+        pass
 
-        # remove pending e desabilita os botões
-        remove_pending_by_ticket(self.data["ticket_channel_id"])
-        self.clear_items()
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
+    # remove pending e desabilita os botões
+    remove_pending_by_ticket(self.data["ticket_channel_id"])
+    self.clear_items()
+    try:
+        await interaction.message.edit(view=self)
+    except Exception:
+        pass
 
-        await interaction.response.send_message("✔️ SET aprovado com sucesso.", ephemeral=True)
+    await interaction.followup.send("✔️ SET aprovado com sucesso.", ephemeral=True)
+
 
     @discord.ui.button(label="❌ RECUSAR", style=discord.ButtonStyle.red)
     async def recusar(self, interaction: discord.Interaction, button: Button):
