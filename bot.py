@@ -34,11 +34,9 @@ CARGO_INICIAL = 1446708434509627523
 # Roles autorizadas a aprovar/recusar (IDs)
 ALLOWED_APPROVERS = [1446690848027836449], [1446709225240662037]
 
-CARGO_ACEITO = 1446721622466629713
-
 # Mapas: preencha com os role IDs (use 0 para ignorar)
 CARGO_MAP = {
-    "Gerente": 1446707117380734996, 
+    "Gerente": 1446707117380734996,
     "Soldado": 1446707139643965644,
     "Vapor": 1446707085114085417,
 }
@@ -146,6 +144,20 @@ async def safe_send(channel: discord.abc.Messageable, embed: discord.Embed, file
 # ===========================================================
 # ========== Views / Modal / Buttons (fluxo SET) ============
 # ===========================================================
+
+async def dar_cargo_aprovado(member: discord.Member):
+    try:
+        cargo = member.guild.get_role(1446721622466629713)
+        if cargo is None:
+            print("❌ Cargo não encontrado no servidor.")
+            return
+        
+        await member.add_roles(cargo, reason="SET aprovado")
+        print(f"✅ Cargo aplicado: {member} recebeu {cargo.name}")
+
+    except Exception as e:
+        print(f"Erro ao adicionar cargo: {e}")
+
 
 class ModalSetFinal(Modal, title="📑 Finalizar SET"):
     nome = TextInput(label="Nome Completo", placeholder="Seu nome completo", max_length=100)
@@ -278,6 +290,9 @@ class ApproveDenyView(View):
     async def aceitar(self, interaction: discord.Interaction, button: Button):
         if not await self._authorized_or_reply(interaction): return
 
+        await dar_cargo_aprovado(member)
+
+
         guild = interaction.guild
         member = guild.get_member(self.data["user_id"])
         ticket_ch = guild.get_channel(self.data["ticket_channel_id"])
@@ -308,16 +323,6 @@ class ApproveDenyView(View):
                 qrole = guild.get_role(qrole_id)
                 if qrole and member:
                     await member.add_roles(qrole, reason="SET aprovado - quebrada")
-        except Exception:
-            pass
-
-                # adiciona cargo da quebrada (se configurado)
-        try:
-            qrole_id = CARGO_ACEITO.get(self.data["aceito"], 0)
-            if qrole_id:
-                qrole = guild.get_role(qrole_id)
-                if qrole and member:
-                    await member.add_roles(qrole, reason="SET aprovado - aceito")
         except Exception:
             pass
 
