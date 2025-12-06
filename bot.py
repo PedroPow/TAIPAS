@@ -435,6 +435,7 @@ async def aceitar(self, interaction: discord.Interaction, button: Button):
     await interaction.followup.send("✔️ SET aprovado com sucesso.", ephemeral=True)
 
 
+
     @discord.ui.button(label="❌ RECUSAR", style=discord.ButtonStyle.red)
     async def recusar(self, interaction: discord.Interaction, button: Button):
         if not await self._authorized_or_reply(interaction): return
