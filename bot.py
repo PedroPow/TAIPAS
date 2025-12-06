@@ -323,52 +323,40 @@ async def aceitar(self, interaction: discord.Interaction, button: Button):
             print(f"[ERRO] falha ao adicionar role {role.name} a {member}: {e}")
             return False
 
-    # adiciona cargo da função (se configurado)
-    try:
-        role_id = CARGO_MAP.get(self.data["cargo"], 0)
-        if role_id:
-            ok = await try_add_role(role_id, "SET aprovado - cargo")
-            if not ok:
-                # log opcional
-                pass
-    except Exception as e:
-        print(f"[WARN] erro ao adicionar cargo da função: {e}")
-
-    # adiciona cargo da quebrada (se configurado)
-    try:
-        qrole_id = QUEBRADA_MAP.get(self.data["quebrada"], 0)
-        if qrole_id:
-            ok = await try_add_role(qrole_id, "SET aprovado - quebrada")
-            if not ok:
-                pass
-    except Exception as e:
-        print(f"[WARN] erro ao adicionar cargo da quebrada: {e}")
-
-    # --- AQUI: adiciona o CARGO APROVADO FIXO ---
-    try:
-        APPROVED_ROLE_ID = 1446721622466629713
-        ok = await try_add_role(APPROVED_ROLE_ID, "SET aprovado - cargo aprovado fixo")
-        if not ok:
-            # tentar sem checagem extra (última tentativa), só por garantia
-            try:
-                role = guild.get_role(APPROVED_ROLE_ID)
-                if role and member:
-                    await member.add_roles(role, reason="SET aprovado - tentativa fallback")
-                    ok = True
-            except Exception as e:
-                print(f"[ERRO] tentativa fallback adicionar cargo aprovado falhou: {e}")
-        # opcional: logar no canal de logs se quiser
+        # --------------------------
+        # 1) Cargo da Função
+        # --------------------------
         try:
-            log_ch = guild.get_channel(LOG_CHANNEL_ID)
-            if log_ch:
-                status = "✅" if ok else "❌"
-                embed = make_embed("Cargo Aprovado Aplicado" if ok else "Falha ao aplicar cargo aprovado",
-                                   f"{status} Usuário: {member.mention}\nCargo alvo ID: `{APPROVED_ROLE_ID}`")
-                await log_ch.send(embed=embed)
+            role_id = CARGO_MAP.get(self.data["cargo"], 0)
+            if role_id:
+                role_funcao = guild.get_role(role_id)
+                if role_funcao:
+                    await member.add_roles(role_funcao, reason="SET aprovado - cargo da função")
         except Exception:
             pass
-    except Exception as e:
-        print(f"[WARN] erro ao aplicar cargo aprovado fixo: {e}")
+
+        # --------------------------
+        # 2) Cargo da Quebrada
+        # --------------------------
+        try:
+            qrole_id = QUEBRADA_MAP.get(self.data["quebrada"], 0)
+            if qrole_id:
+                role_quebrada = guild.get_role(qrole_id)
+                if role_quebrada:
+                    await member.add_roles(role_quebrada, reason="SET aprovado - quebrada")
+        except Exception:
+            pass
+
+        # --------------------------
+        # 3) Cargo Fixo de Aprovado
+        # --------------------------
+        try:
+            cargo_aprovado = guild.get_role(1446721622466629713)
+            if cargo_aprovado:
+                await member.add_roles(cargo_aprovado, reason="SET aprovado - cargo fixo de aprovados")
+        except Exception:
+            pass
+
 
     # renomeia (se possível)
     if member:
