@@ -38,7 +38,7 @@ APPROVED_ROLE_ID = 1446982320547531595
 
 # Mapas: preencha com os role IDs (use 0 para ignorar)
 CARGO_MAP = {
-    "Gerente": ([1446707117380734996, 1446982320547531595]),
+    "Gerente": 1446982320547531595,
     "Soldado": 1446707139643965644, 
     "Vapor": 1446707085114085417, 
 }
