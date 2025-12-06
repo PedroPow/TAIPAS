@@ -321,13 +321,28 @@ async def aceitar(self, interaction: discord.Interaction, button: Button):
     except Exception as e:
         print(f"[ERRO] erro ao adicionar cargo de quebrada: {e}")
 
-    # 3) Cargo fixo de aprovado (ID PEDIDO)
+    # === DAR CARGO DE APROVADO ===
     try:
-        role_aprovado = guild.get_role(1446721622466629713)
-        if role_aprovado:
-            await member.add_roles(role_aprovado, reason="SET aprovado - cargo fixo")
-    except Exception as e:
-        print(f"[ERRO] erro ao adicionar cargo fixo de aprovado: {e}")
+        membro = guild.get_member(self.data["user_id"])
+        if membro is None:
+            membro = await guild.fetch_member(self.data["user_id"])
+    except:
+        membro = None
+
+    if membro:
+        approved_role_id = 1446721622466629713
+        approved_role = guild.get_role(approved_role_id)
+
+        if approved_role:
+            try:
+                await membro.add_roles(approved_role, reason="SET aprovado - cargo aprovado")
+                print(f"[SET] Cargo APROVADO adicionado a {membro}.")
+            except Exception as e:
+                print(f"[ERRO] Falha ao dar cargo aprovado: {e}")
+        else:
+            print("[ERRO] Cargo de aprovado não encontrado no servidor!")
+
+
 
     # =============== RENOMEAR ===============
     try:
