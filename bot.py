@@ -470,8 +470,10 @@ class FixedButtonView(View):
 
         # blacklist check
         if member.id in blacklist.get("ids", []):
-            try: await member.send("Você está impedido de abrir SET (blacklist).")
-            except: pass
+            try:
+                await member.send("Você está impedido de abrir SET (blacklist).")
+            except:
+                pass
             return await interaction.response.send_message("🚫 Você não pode abrir um SET.", ephemeral=True)
 
         # evita duplicação de ticket
@@ -481,16 +483,33 @@ class FixedButtonView(View):
 
         # cria canal na categoria configurada
         category = discord.utils.get(guild.categories, id=CATEGORY_TICKETS) if CATEGORY_TICKETS else None
+
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False, send_messages=False),
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            guild.me: discord.PermissionOverwrite(
+                read_messages=True,
+                send_messages=True,
+                manage_channels=True,
+                manage_permissions=True
+            )
         }
+
         try:
-            ticket = await guild.create_text_channel(name=f"set-{member.id}", category=category, overwrites=overwrites, reason="Ticket de SET criado")
+            ticket = await guild.create_text_channel(
+                name=f"set-{member.id}",
+                category=category,
+                overwrites=overwrites,
+                reason="Ticket de SET criado"
+            )
         except Exception as e:
-            await interaction.response.send_message("❌ Erro ao criar ticket. Verifique permissões do bot.", ephemeral=True)
-            return
+            print("\n❌ ERRO AO CRIAR TICKET:")
+            print(e)
+            print("──────────────────────────────────────────\n")
+            return await interaction.response.send_message(
+                "❌ Erro ao criar ticket. Dê permissão de **Gerenciar Canais** e **Gerenciar Permissões** ao bot.",
+                ephemeral=True
+            )
 
         # atribui cargo inicial opcional
         if CARGO_INICIAL:
@@ -498,19 +517,20 @@ class FixedButtonView(View):
                 role_ini = guild.get_role(CARGO_INICIAL)
                 if role_ini:
                     await member.add_roles(role_ini, reason="Recebeu cargo 'sem set' ao abrir ticket")
-            except Exception:
-                pass
+            except Exception as e:
+                print("Erro ao dar cargo inicial:", e)
 
         # envia embed inicial com selects
         embed = make_embed("☯️ Iniciar SET", "Selecione sua Quebrada e Cargo abaixo para continuar.")
         embed.set_thumbnail(url=f"attachment://{LOGO_FILENAME}")
         view = SelectEtapa1(member, ticket)
+
         try:
             if os.path.exists(LOGO_PATH):
                 await ticket.send(embed=embed, view=view, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
             else:
                 await ticket.send(embed=embed, view=view)
-        except Exception:
+        except:
             await ticket.send(embed=embed, view=view)
 
         await interaction.response.send_message(f"✅ Ticket criado: {ticket.mention}", ephemeral=True)
