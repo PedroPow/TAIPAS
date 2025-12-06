@@ -34,6 +34,8 @@ CARGO_INICIAL = 1446708434509627523
 # Roles autorizadas a aprovar/recusar (IDs)
 ALLOWED_APPROVERS = ([1446690848027836449], [1446709225240662037])
 
+APPROVED_ROLE_ID = 1446982320547531595
+
 # Mapas: preencha com os role IDs (use 0 para ignorar)
 CARGO_MAP = {
     "Gerente": 1446707117380734996, 
@@ -330,7 +332,7 @@ async def aceitar(self, interaction: discord.Interaction, button: Button):
         membro = None
 
     if membro:
-        approved_role_id = 1446721622466629713
+        approved_role_id = 1446982320547561595
         approved_role = guild.get_role(approved_role_id)
 
         if approved_role:
