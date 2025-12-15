@@ -21,11 +21,12 @@ CANAL_BOTAO_FIXO = 1343398652349255758        # ID do canal para postar o botão
 LOG_CHANNEL_ID = 1450001931278745640         # ID do canal de logs
 # Cargo inicial "SEM SET" (0 para ignorar)
 CARGO_INICIAL = 1345435302285545652
+MEMBRO_ID = 1343645401051431017
 
 # Roles autorizadas a aprovar/recusar (IDs)
-ALLOWED_APPROVERS = ([1449985109116715008])
+ALLOWED_APPROVERS = [1449985109116715008]
 
-APPROVED_ROLE_ID = 1343645401051431017,
+APPROVED_ROLE_ID = 1343645401051431017
 
 
 # Mapas: preencha com os role IDs (use 0 para ignorar)
@@ -66,37 +67,6 @@ NICK_FORMAT = "{id} | {vulgo}"
 # Timeout para respostas (em segundos)
 RESPONSE_TIMEOUT = 300
 
-# ===========================================================
-# ============= FUNÇÃO POS_SETAGEM — ENTREGA CARGO ==========
-# ===========================================================
-
-async def POS_SETAGEM(interaction, membro_id: int, cargo_aprovado_id: int):
-    guild = interaction.guild
-    if guild is None:
-        return await interaction.response.send_message("Erro: guild não encontrada.", ephemeral=True)
-
-    membro = guild.get_member(membro_id)
-    if membro is None:
-        return await interaction.response.send_message("Erro: usuário não encontrado no servidor.", ephemeral=True)
-
-    cargo = guild.get_role(cargo_aprovado_id)
-    if cargo is None:
-        return await interaction.response.send_message("Erro: cargo configurado não existe.", ephemeral=True)
-
-    try:
-        await membro.add_roles(cargo, reason="SET aprovado")
-    except Exception as e:
-        return await interaction.response.send_message(
-            f"Não consegui dar o cargo. Erro:\n```\n{e}\n```",
-            ephemeral=True
-        )
-
-    await interaction.response.send_message(
-        f"✅ Cargo **{cargo.name}** entregue para **{membro.mention}**.",
-        ephemeral=True
-    )
-
-    print(f"[POS_SETAGEM] Cargo {cargo.name} entregue ao membro {membro} ({membro.id})")
 
 
 # ===========================================================
@@ -302,14 +272,13 @@ class ApproveDenyView(View):
         if not await self._authorized_or_reply(interaction):
             return
 
-        ID_DO_CARGO_APROVADO = 1446721622466629713
-
         await POS_SETAGEM(
-            interaction=interaction,
-            data=self.data,
-            membro_id=self.membro_id,
-            cargo_aprovado_id=ID_DO_CARGO_APROVADO
-        )
+        interaction=interaction,
+        data=self.data,
+        membro_id=self.membro_id,
+        cargo_aprovado_id=APPROVED_ROLE_ID
+    )
+
 
         await interaction.response.send_message(
             f"SET aprovado! Cargo entregue para <@{self.membro_id}>.",
@@ -318,6 +287,7 @@ class ApproveDenyView(View):
 
 async def POS_SETAGEM(interaction: discord.Interaction, data: dict, membro_id: int, cargo_aprovado_id: int):
     guild = interaction.guild
+
 
     # ================= OBTER O MEMBRO =================
     member = guild.get_member(membro_id)
@@ -376,13 +346,14 @@ async def POS_SETAGEM(interaction: discord.Interaction, data: dict, membro_id: i
 
 
     # =============== RENOMEAR ===============
-    try:
         await member.edit(
-            nick=NICK_FORMAT.format(id=data["idd"], vulgo=data["vulgo"]),
-            reason="SET aprovado"
-        )
-    except Exception as e:
-        print(f"[WARN] falha ao renomear membro: {e}")
+        nick=NICK_FORMAT.format(
+            id=data["idd"],
+            vulgo=data["NDG"]
+        ),
+        reason="SET aprovado"
+    )
+
 
     # =============== DM ===============
     try:
