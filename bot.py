@@ -14,31 +14,37 @@ from discord.ui import View, Button, Select, Modal, TextInput
 TOKEN = os.getenv("TOKEN") or "MTM0OTU1OTU5NTA2NDA5ODg4OA.GuNm4c.apESDYag98R5QW933ucUrVgn-pK8wLOjtf2GgU"
 
 # IDs (preencha com seus IDs)
-GUILD_ID = 1445599273595961546  # ID do servidor (opcional, facilita sync se quiser)
-CATEGORY_TICKETS = 1445599394291253351       # ID da categoria onde tickets serão criados
-CANAL_SETS = 1446706930293801102            # ID do canal onde a staff recebe os sets
-CANAL_BOTAO_FIXO = 1445599273595961549        # ID do canal para postar o botão fixo
+GUILD_ID = 1343398652336537654  # ID do servidor (opcional, facilita sync se quiser)
+CATEGORY_TICKETS = 1343398652349255757       # ID da categoria onde tickets serão criados
+CANAL_SETS = 1450001795572039721         # ID do canal onde a staff recebe os sets
+CANAL_BOTAO_FIXO = 1343398652349255758        # ID do canal para postar o botão fixo
 LOG_CHANNEL_ID = 1445599309176504491         # ID do canal de logs
 # Cargo inicial "SEM SET" (0 para ignorar)
-CARGO_INICIAL = 1446708434509627523
+CARGO_INICIAL = 1345435302285545652
 
 # Roles autorizadas a aprovar/recusar (IDs)
-ALLOWED_APPROVERS = ([1446690848027836449], [1446709225240662037])
+ALLOWED_APPROVERS = ([1449985109116715008])
 
-APPROVED_ROLE_ID = 1446982320547531595
+APPROVED_ROLE_ID = 1343645401051431017,
+
 
 # Mapas: preencha com os role IDs (use 0 para ignorar)
 CARGO_MAP = {
-    "Gerente": 1446982320547531595,
-    "Soldado": 1446707139643965644, 
-    "Vapor": 1446707085114085417, 
+    "[❯] Soldado de 1º Classe PM": 1343408322774175785,
+    "[❯❯] Cabo PM": 1343408303417331772,
+    "[❯❯❯] 3º Sargento PM": 1343404402219814932,
+    "[❯ ❯❯❯] 2º Sargento PM": 1343408106457272462,
+    "[❯❯ ❯❯❯] 1º Sargento PM": 1343408155161264158,
+    "[△] Sub-Tenente PM": 1343727303795933184,
+    "[✯] Aspirante a Oficial PM": 1343648749381091570,
+    "[✧] 2º Tenente PM": 1343419697294479471,
+    "[✧✧] 1º Tenente PM": 1343408376302014495,
+    "[✧✧✧] Capitão PM": 1343404318946103346,
+    "[✵✧✧] Major PM": 1343401976523784253,
+    "[✵✵✧] Tenente Coronel PM": 1343401212417937468,
 }
 QUEBRADA_MAP = {
-    "Zona Leste": 1446707302131302472,
-    "Zona Norte": 1446707265208975411,
-    "Zona Sul": 1446707458448953365,
-    "Zona Oeste": 1446707347329384489,
-    "Centro": 1446707233508561067,
+    "1° BPCHOq ROTA": 1343645401051431017,
 }
 
 # Lista de opções para os selects (capturado das chaves dos maps)
@@ -173,10 +179,10 @@ async def safe_send(channel: discord.abc.Messageable, embed: discord.Embed, file
 
 class ModalSetFinal(Modal, title="📑 Finalizar SET"):
     nome = TextInput(label="Nome Completo", placeholder="Seu nome completo", max_length=100)
-    vulgo = TextInput(label="Vulgo", placeholder="Como te chamam?", max_length=64)
+    vulgo = TextInput(label="Nome de Guerra", placeholder="Como te chamam?", max_length=64)
     idd = TextInput(label="ID", placeholder="ID que usa no servidor", max_length=50)
     numerada = TextInput(label="Numerada", placeholder="Numerada (opcional)", required=False, max_length=50)
-    aval = TextInput(label="Aval", placeholder="Quem te avaliou (opcional)", required=False, max_length=64)
+    aval = TextInput(label="Responsavel", placeholder="Quem te avaliou (opcional)", required=False, max_length=64)
 
     def __init__(self, user: discord.Member, ticket_channel: discord.TextChannel, quebrada: str, cargo: str):
         super().__init__()
@@ -197,23 +203,23 @@ class ModalSetFinal(Modal, title="📑 Finalizar SET"):
             "user_name": str(self.user),
             "ticket_channel_id": self.ticket_channel.id,
             "nome": self.nome.value,
-            "vulgo": self.vulgo.value,
+            "NDG": self.vulgo.value,
             "idd": self.idd.value,
             "numerada": self.numerada.value,
-            "aval": self.aval.value,
-            "quebrada": self.quebrada,
-            "cargo": self.cargo,
+            "RESP": self.aval.value,
+            "BTA": self.quebrada,
+            "PATENTE": self.cargo,
             "timestamp": datetime.utcnow().isoformat()
         }
 
         embed = make_embed("☯️ NOVO SET RECEBIDO", color=0x00FF38)
         embed.add_field(name="Nome", value=data["nome"], inline=False)
-        embed.add_field(name="Vulgo", value=data["vulgo"], inline=False)
+        embed.add_field(name="NDG", value=data["NDG"], inline=False)
         embed.add_field(name="ID", value=data["idd"], inline=False)
         embed.add_field(name="Numerada", value=data["numerada"] or "—", inline=False)
-        embed.add_field(name="Aval", value=data["aval"] or "—", inline=False)
-        embed.add_field(name="Quebrada", value=data["quebrada"], inline=True)
-        embed.add_field(name="Cargo", value=data["cargo"], inline=True)
+        embed.add_field(name="RESP", value=data["RESP"] or "—", inline=False)
+        embed.add_field(name="BTA", value=data["BTA"], inline=True)
+        embed.add_field(name="PATENTE", value=data["PATENTE"], inline=True)
         embed.add_field(name="Ticket", value=f"<#{self.ticket_channel.id}>", inline=False)
         embed.set_thumbnail(url=f"attachment://{LOGO_FILENAME}")
 
@@ -240,7 +246,7 @@ class SelectEtapa1(View):
 
         # quebrada select
         self.q_select = Select(
-            placeholder="Selecione sua Quebrada",
+            placeholder="Selecione seu batalhão",
             min_values=1,
             max_values=1,
             options=[discord.SelectOption(label=q, value=q) for q in QUEBRADAS],
@@ -251,7 +257,7 @@ class SelectEtapa1(View):
 
         # cargo select
         self.c_select = Select(
-            placeholder="Selecione seu Cargo",
+            placeholder="Selecione sua patente",
             min_values=1,
             max_values=1,
             options=[discord.SelectOption(label=c, value=c) for c in CARGOS],
@@ -267,7 +273,7 @@ class SelectEtapa1(View):
         if self.chosen_cargo:
             modal = ModalSetFinal(self.user, self.ticket_channel, self.chosen_quebrada, self.chosen_cargo)
             return await interaction.response.send_modal(modal)
-        await interaction.response.send_message(f"🏙️ Quebrada selecionada: **{self.chosen_quebrada}**", ephemeral=True)
+        await interaction.response.send_message(f"🏙️ batalhão selecionado: **{self.chosen_quebrada}**", ephemeral=True)
 
     async def _cargo_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user.id:
@@ -276,7 +282,7 @@ class SelectEtapa1(View):
         if self.chosen_quebrada:
             modal = ModalSetFinal(self.user, self.ticket_channel, self.chosen_quebrada, self.chosen_cargo)
             return await interaction.response.send_modal(modal)
-        await interaction.response.send_message(f"🔰 Cargo selecionado: **{self.chosen_cargo}**", ephemeral=True)
+        await interaction.response.send_message(f"🔰 patente selecionada: **{self.chosen_cargo}**", ephemeral=True)
 
 
 class ApproveDenyView(View):
