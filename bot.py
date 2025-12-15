@@ -18,7 +18,7 @@ GUILD_ID = 1343398652336537654  # ID do servidor (opcional, facilita sync se qui
 CATEGORY_TICKETS = 1343398652349255757       # ID da categoria onde tickets serão criados
 CANAL_SETS = 1450001795572039721         # ID do canal onde a staff recebe os sets
 CANAL_BOTAO_FIXO = 1343398652349255758        # ID do canal para postar o botão fixo
-LOG_CHANNEL_ID = 1445599309176504491         # ID do canal de logs
+LOG_CHANNEL_ID = 1450001931278745640         # ID do canal de logs
 # Cargo inicial "SEM SET" (0 para ignorar)
 CARGO_INICIAL = 1345435302285545652
 
