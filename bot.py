@@ -11,7 +11,7 @@ from discord.ui import View, Button, Select, Modal, TextInput
 
 # ========== CONFIGURAÇÕES - ajuste estes valores ==========
 # Use TOKEN via env var por segurança (ex: export TOKEN="seu_token")
-TOKEN = os.getenv("TOKEN") or "MTM3MDYzMDA2NDg1MjU3MDE2Mg.GA-Z9I.rfoE5OSp3m5B2QMaLPchZMM52zgBDUG1HmsKMY"
+TOKEN = os.getenv("TOKEN")
 
 # IDs (preencha com seus IDs)
 GUILD_ID = 1343398652336537654  # ID do servidor (opcional, facilita sync se quiser)
