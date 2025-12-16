@@ -2,7 +2,9 @@ import os
 import json
 from datetime import datetime
 from typing import Optional
-
+import aiohttp
+import asyncio
+import io
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -182,11 +184,71 @@ async def POS_SETAGEM(interaction: discord.Interaction, data: dict):
     await interaction.response.send_message("✔️ SET aprovado com sucesso.", ephemeral=True)
 
 # ================= SLASH COMMANDS =================
-@bot.tree.command(name="mensagem", description="Enviar uma mensagem como o bot")
-@app_commands.checks.has_permissions(administrator=True)
-async def slash_mensagem(interaction: discord.Interaction, canal: discord.TextChannel, texto: str):
-    await canal.send(texto)
-    await interaction.response.send_message("✅ Mensagem enviada.", ephemeral=True)
+@bot.tree.command(name="mensagem", description="Envie uma mensagem pelo bot", guild=discord.Object(id=GUILD_ID))
+async def mensagem(interaction: discord.Interaction):
+    # Permissões: mantenha seus role ids conforme necessário
+    allowed_role_ids = [
+        1364016462154563614,  # PRESIDENTE
+        1364016541330575451,  # VICE PRESIDENTE
+        1389710649390534717,  # GOVERNADOR
+        1376730670910537788   # DEV
+    ]
+    if not any(discord.utils.get(interaction.user.roles, id=role_id) for role_id in allowed_role_ids):
+        await interaction.response.send_message("❌ Você não tem permissão para usar este comando.", ephemeral=True)
+        return
+
+    class MensagemModal(discord.ui.Modal, title="📨 Enviar Mensagem"):
+        conteudo = discord.ui.TextInput(
+            label="Conteúdo da Mensagem",
+            style=discord.TextStyle.paragraph,
+            placeholder="Escreva a mensagem com quebras de linha, emojis etc.",
+            max_length=2000
+        )
+
+        async def on_submit(self, interaction_modal: discord.Interaction):
+            await interaction_modal.response.send_message("⏳ Enviando mensagem...", ephemeral=True)
+            sent_msg = await interaction.channel.send(self.conteudo.value)
+
+            await interaction_modal.followup.send(
+                "📎 Se desejar, **responda à mensagem enviada** com anexos (imagens/vídeos) **em até 5 minutos**.",
+                ephemeral=True
+            )
+
+            def check(m):
+                return (
+                    m.reference and
+                    m.reference.message_id == sent_msg.id and
+                    m.author == interaction_modal.user and
+                    m.channel == interaction_modal.channel
+                )
+
+            try:
+                reply_msg = await bot.wait_for("message", timeout=300.0, check=check)
+
+                arquivos = []
+                async with aiohttp.ClientSession() as session:
+                    for attachment in reply_msg.attachments:
+                        async with session.get(attachment.url) as resp:
+                            if resp.status == 200:
+                                data = await resp.read()
+                                arquivos.append(discord.File(fp=io.BytesIO(data), filename=attachment.filename))
+
+                try:
+                    await sent_msg.delete()
+                except discord.Forbidden:
+                    pass
+                try:
+                    await reply_msg.delete()
+                except discord.Forbidden:
+                    pass
+
+                await interaction.channel.send(content=self.conteudo.value, files=arquivos)
+
+            except asyncio.TimeoutError:
+                pass
+
+    await interaction.response.send_modal(MensagemModal())
+
 
 @bot.tree.command(name="ban", description="Banir um usuário")
 @app_commands.checks.has_permissions(ban_members=True)
