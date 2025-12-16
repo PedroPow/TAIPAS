@@ -92,6 +92,42 @@ def make_embed(title, desc="", color=0x00FF38):
     e.set_footer(text="Sistema de SET • PCC Zona Leste")
     return e
 
+class FixedButtonView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="📑 Iniciar SET",
+        style=discord.ButtonStyle.primary,
+        custom_id="iniciar_set"
+    )
+    async def iniciar(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id in blacklist.get("ids", []):
+            return await interaction.response.send_message(
+                "❌ Você está na blacklist.",
+                ephemeral=True
+            )
+
+        categoria = interaction.guild.get_channel(CATEGORY_TICKETS)
+        canal = await interaction.guild.create_text_channel(
+            name=f"set-{interaction.user.name}",
+            category=categoria
+        )
+
+        await canal.set_permissions(interaction.user, view_channel=True, send_messages=True)
+        await canal.send(
+            embed=make_embed(
+                "📑 SET INICIADO",
+                "Selecione sua **quebrada** e **patente** para continuar."
+            )
+        )
+
+        await interaction.response.send_message(
+            f"✅ Ticket criado: {canal.mention}",
+            ephemeral=True
+        )
+
+
 # ================= MODAL =================
 class ModalSetFinal(Modal, title="📑 Finalizar SET"):
     nome = TextInput(label="Nome Completo")
@@ -281,13 +317,16 @@ async def slash_clearall(interaction: discord.Interaction, quantidade: int):
 # ================= START =================
 @bot.event
 async def on_ready():
+    bot.add_view(FixedButtonView())
+
     try:
         synced = await bot.tree.sync()
         print(f"✅ Slash sincronizados: {len(synced)}")
     except Exception as e:
-        print("Erro ao sync slash:", e)
+        print(f"Erro ao sincronizar slash: {e}")
 
     print(f"🤖 Bot online como {bot.user}")
+
 
 if __name__ == "__main__":
     bot.run(TOKEN)
