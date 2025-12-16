@@ -216,6 +216,5 @@ async def on_member_join(member):
         except discord.HTTPException as e:
             print(f"Erro ao atribuir cargo de novato: {e}")
 
-TOKEN="MTM2MjIwODU1NjUwNTM2NjczMA.Gb6GC1.aO9KZi-vv92s8eVXPMdmGUXb5LtW2AtYSLFWeM"
 
-bot.run(TOKEN)
+TOKEN = os.getenv("TOKEN")
