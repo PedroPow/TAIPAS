@@ -1,4 +1,2 @@
-from dotenv import load_dotenv
-load_dotenv()
-discord.py
-aiohttp
+discord.py>=2.4.0
+python-dotenv>=1.0.1
