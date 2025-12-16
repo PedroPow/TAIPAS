@@ -9,9 +9,17 @@ import sys
 
 sys.modules['audioop'] = None
 
-# ================= BOT =================
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+ID_DO_SERVIDOR = 1343398652336537654
+
+intents = discord.Intents.default()
+intents.members = True
+
+class MyBot(commands.Bot):
+    async def setup_hook(self):
+        await self.tree.sync(guild=discord.Object(id=ID_DO_SERVIDOR))
+        print("✅ Slash sincronizados")
+
+bot = MyBot(command_prefix="!", intents=intents)
 
 # ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
@@ -64,6 +72,9 @@ def validar_cargos_companhia(guild: discord.Guild, companhia: str):
 
 def get_patentes_para(companhia):
     return PATENTES_ESPECIALIZADAS.get(companhia, {})
+
+
+
 
 # ================= VIEW BOTÃO =================
 class TicketView(View):
@@ -270,10 +281,8 @@ async def on_ready():
     )
 
 @bot.event
-async def on_member_join(member):
-    role = member.guild.get_role(CARGO_NOVATO_ID)
-    if role:
-        await member.add_roles(role, reason="Novo membro")
+async def on_ready():
+    print(f"🤖 Bot conectado como {bot.user}")
 
 # ================= START =================
 bot.run(TOKEN)
