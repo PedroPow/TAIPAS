@@ -1,35 +1,28 @@
 import os
 import json
-import asyncio
 from datetime import datetime
 from typing import Optional
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord.ui import View, Button, Select, Modal, TextInput
 
-# ========== CONFIGURAÇÕES - ajuste estes valores ==========
-# Use TOKEN via env var por segurança (ex: export TOKEN="seu_token")
+# ================= CONFIGURAÇÕES =================
 TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    raise RuntimeError("❌ TOKEN não definido nas variáveis de ambiente")
 
-# IDs (preencha com seus IDs)
-GUILD_ID = 1343398652336537654  # ID do servidor (opcional, facilita sync se quiser)
-CATEGORY_TICKETS = 1343398652349255757       # ID da categoria onde tickets serão criados
-CANAL_SETS = 1450001795572039721         # ID do canal onde a staff recebe os sets
-CANAL_BOTAO_FIXO = 1343398652349255758        # ID do canal para postar o botão fixo
-LOG_CHANNEL_ID = 1450001931278745640         # ID do canal de logs
-# Cargo inicial "SEM SET" (0 para ignorar)
+GUILD_ID = 1343398652336537654
+CATEGORY_TICKETS = 1343398652349255757
+CANAL_SETS = 1450001795572039721
+CANAL_BOTAO_FIXO = 1343398652349255758
+LOG_CHANNEL_ID = 1450001931278745640
+
 CARGO_INICIAL = 1345435302285545652
-MEMBRO_ID = 1343645401051431017
-
-# Roles autorizadas a aprovar/recusar (IDs)
 ALLOWED_APPROVERS = [1449985109116715008]
-
 APPROVED_ROLE_ID = 1343645401051431017
 
-
-# Mapas: preencha com os role IDs (use 0 para ignorar)
 CARGO_MAP = {
     "[❯] Soldado de 1º Classe PM": 1343408322774175785,
     "[❯❯] Cabo PM": 1343408303417331772,
@@ -44,653 +37,193 @@ CARGO_MAP = {
     "[✵✧✧] Major PM": 1343401976523784253,
     "[✵✵✧] Tenente Coronel PM": 1343401212417937468,
 }
+
 QUEBRADA_MAP = {
     "1° BPCHOq ROTA": 1343645401051431017,
 }
 
-# Lista de opções para os selects (capturado das chaves dos maps)
 QUEBRADAS = list(QUEBRADA_MAP.keys())
 CARGOS = list(CARGO_MAP.keys())
 
-# Arquivos de persistência local
 DATA_FOLDER = "data"
 BLACKLIST_FILE = os.path.join(DATA_FOLDER, "blacklist.json")
 PENDING_FILE = os.path.join(DATA_FOLDER, "pending_sets.json")
 
-# Caminho local para logo (opcional)
 LOGO_PATH = "/mnt/data/IMAGEM_NORMAL_NATAL.png"
 LOGO_FILENAME = "logo.png"
 
-# Formato de nick
 NICK_FORMAT = "{id} | {vulgo}"
 
-# Timeout para respostas (em segundos)
-RESPONSE_TIMEOUT = 300
-
-
-
-# ===========================================================
-# =========== Inicialização do bot e utilitários ============
-# ===========================================================
+# ================= BOT =================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# garante pasta data
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
-def _load_json(path: str, default):
+def load_json(path, default):
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, ensure_ascii=False, indent=2)
+            json.dump(default, f, indent=2, ensure_ascii=False)
         return default
     with open(path, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except Exception:
-            return default
+        return json.load(f)
 
-def _save_json(path: str, data):
+def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
-blacklist = _load_json(BLACKLIST_FILE, {"ids": []})
-pending_sets = _load_json(PENDING_FILE, {"sets": []})
+blacklist = load_json(BLACKLIST_FILE, {"ids": []})
+pending_sets = load_json(PENDING_FILE, {"sets": []})
 
 def is_approver(member: discord.Member) -> bool:
-    if member is None:
-        return False
-    for r in member.roles:
-        if r.id in ALLOWED_APPROVERS:
-            return True
-    return member.guild_permissions.manage_guild or member.guild_permissions.kick_members
+    return (
+        any(r.id in ALLOWED_APPROVERS for r in member.roles)
+        or member.guild_permissions.administrator
+    )
 
-def add_pending(entry: dict):
-    pending_sets["sets"].append(entry)
-    _save_json(PENDING_FILE, pending_sets)
-
-def remove_pending_by_ticket(channel_id: int):
-    original = len(pending_sets["sets"])
-    pending_sets["sets"] = [s for s in pending_sets["sets"] if s.get("ticket_channel_id") != channel_id]
-    if len(pending_sets["sets"]) != original:
-        _save_json(PENDING_FILE, pending_sets)
-
-def find_pending_by_staff_msg(message_id: int) -> Optional[dict]:
-    for s in pending_sets["sets"]:
-        if s.get("staff_message_id") == message_id:
-            return s
-    return None
-
-def find_pending_by_user(user_id: int) -> Optional[dict]:
-    for s in pending_sets["sets"]:
-        if s.get("user_id") == user_id:
-            return s
-    return None
-
-def make_embed(title: str, description: str = "", color: int = 0x00FF38) -> discord.Embed:
-    e = discord.Embed(title=title, description=description, color=color)
+def make_embed(title, desc="", color=0x00FF38):
+    e = discord.Embed(title=title, description=desc, color=color)
     e.set_footer(text="Sistema de SET • PCC Zona Leste")
     return e
 
-async def safe_send(channel: discord.abc.Messageable, embed: discord.Embed, file_logo: bool = True, view: Optional[View] = None):
-    try:
-        if file_logo and os.path.exists(LOGO_PATH):
-            await channel.send(embed=embed, view=view, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-        else:
-            await channel.send(embed=embed, view=view)
-    except Exception:
-        await channel.send(embed=embed, view=view)
-
-# ===========================================================
-# ========== Views / Modal / Buttons (fluxo SET) ============
-# ===========================================================
-
+# ================= MODAL =================
 class ModalSetFinal(Modal, title="📑 Finalizar SET"):
-    nome = TextInput(label="Nome Completo", placeholder="Seu nome completo", max_length=100)
-    vulgo = TextInput(label="Nome de Guerra", placeholder="Como te chamam?", max_length=64)
-    idd = TextInput(label="ID", placeholder="ID que usa no servidor", max_length=50)
-    numerada = TextInput(label="Numerada", placeholder="Numerada (opcional)", required=False, max_length=50)
-    aval = TextInput(label="Responsavel", placeholder="Quem te avaliou (opcional)", required=False, max_length=64)
+    nome = TextInput(label="Nome Completo")
+    vulgo = TextInput(label="Nome de Guerra")
+    idd = TextInput(label="ID")
+    numerada = TextInput(label="Numerada", required=False)
+    responsavel = TextInput(label="Responsável", required=False)
 
-    def __init__(self, user: discord.Member, ticket_channel: discord.TextChannel, quebrada: str, cargo: str):
+    def __init__(self, user, ticket, quebrada, cargo):
         super().__init__()
         self.user = user
-        self.ticket_channel = ticket_channel
+        self.ticket = ticket
         self.quebrada = quebrada
         self.cargo = cargo
 
     async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        staff_ch = guild.get_channel(CANAL_SETS)
-        if staff_ch is None:
-            await interaction.response.send_message("Erro: canal de staff não configurado ou não encontrado.", ephemeral=True)
-            return
-
         data = {
             "user_id": self.user.id,
-            "user_name": str(self.user),
-            "ticket_channel_id": self.ticket_channel.id,
+            "ticket_channel_id": self.ticket.id,
             "nome": self.nome.value,
             "NDG": self.vulgo.value,
             "idd": self.idd.value,
             "numerada": self.numerada.value,
-            "RESP": self.aval.value,
+            "RESPONSAVEL": self.responsavel.value,
             "BTA": self.quebrada,
             "PATENTE": self.cargo,
             "timestamp": datetime.utcnow().isoformat()
         }
 
-        embed = make_embed("☯️ NOVO SET RECEBIDO", color=0x00FF38)
+        embed = make_embed("☯️ NOVO SET RECEBIDO")
         embed.add_field(name="Nome", value=data["nome"], inline=False)
-        embed.add_field(name="NDG", value=data["NDG"], inline=False)
+        embed.add_field(name="Vulgo", value=data["NDG"], inline=False)
         embed.add_field(name="ID", value=data["idd"], inline=False)
         embed.add_field(name="Numerada", value=data["numerada"] or "—", inline=False)
-        embed.add_field(name="RESP", value=data["RESP"] or "—", inline=False)
+        embed.add_field(name="Responsável", value=data["RESPONSAVEL"] or "—", inline=False)
         embed.add_field(name="BTA", value=data["BTA"], inline=True)
-        embed.add_field(name="PATENTE", value=data["PATENTE"], inline=True)
-        embed.add_field(name="Ticket", value=f"<#{self.ticket_channel.id}>", inline=False)
-        embed.set_thumbnail(url=f"attachment://{LOGO_FILENAME}")
+        embed.add_field(name="Patente", value=data["PATENTE"], inline=True)
 
+        staff = interaction.guild.get_channel(CANAL_SETS)
         view = ApproveDenyView(data)
-        # Garantir envio do embed e salvar staff message id
-        try:
-            sent = await staff_ch.send(embed=embed, view=view, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME)) if os.path.exists(LOGO_PATH) else await staff_ch.send(embed=embed, view=view)
-        except Exception:
-            sent = await staff_ch.send(embed=embed, view=view)
+        msg = await staff.send(embed=embed, view=view)
 
-        data["staff_message_id"] = sent.id
-        add_pending(data)
+        data["staff_message_id"] = msg.id
+        pending_sets["sets"].append(data)
+        save_json(PENDING_FILE, pending_sets)
 
-        await interaction.response.send_message("📨 Seu SET foi enviado para análise da staff.", ephemeral=True)
+        await interaction.response.send_message("📨 SET enviado para análise.", ephemeral=True)
 
-
-class SelectEtapa1(View):
-    def __init__(self, user: discord.Member, ticket_channel: discord.TextChannel):
-        super().__init__(timeout=None)
-        self.user = user
-        self.ticket_channel = ticket_channel
-        self.chosen_quebrada = None
-        self.chosen_cargo = None
-
-        # quebrada select
-        self.q_select = Select(
-            placeholder="Selecione seu batalhão",
-            min_values=1,
-            max_values=1,
-            options=[discord.SelectOption(label=q, value=q) for q in QUEBRADAS],
-            custom_id=f"select_quebrada_{user.id}"
-        )
-        self.q_select.callback = self._quebrada_callback
-        self.add_item(self.q_select)
-
-        # cargo select
-        self.c_select = Select(
-            placeholder="Selecione sua patente",
-            min_values=1,
-            max_values=1,
-            options=[discord.SelectOption(label=c, value=c) for c in CARGOS],
-            custom_id=f"select_cargo_{user.id}"
-        )
-        self.c_select.callback = self._cargo_callback
-        self.add_item(self.c_select)
-
-    async def _quebrada_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user.id:
-            return await interaction.response.send_message("❌ Isso não é para você.", ephemeral=True)
-        self.chosen_quebrada = interaction.data["values"][0]
-        if self.chosen_cargo:
-            modal = ModalSetFinal(self.user, self.ticket_channel, self.chosen_quebrada, self.chosen_cargo)
-            return await interaction.response.send_modal(modal)
-        await interaction.response.send_message(f"🏙️ batalhão selecionado: **{self.chosen_quebrada}**", ephemeral=True)
-
-    async def _cargo_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user.id:
-            return await interaction.response.send_message("❌ Isso não é para você.", ephemeral=True)
-        self.chosen_cargo = interaction.data["values"][0]
-        if self.chosen_quebrada:
-            modal = ModalSetFinal(self.user, self.ticket_channel, self.chosen_quebrada, self.chosen_cargo)
-            return await interaction.response.send_modal(modal)
-        await interaction.response.send_message(f"🔰 patente selecionada: **{self.chosen_cargo}**", ephemeral=True)
-
-
+# ================= VIEW APROVAÇÃO =================
 class ApproveDenyView(View):
-    def __init__(self, data: dict):
+    def __init__(self, data):
         super().__init__(timeout=None)
         self.data = data
-        self.membro_id = data.get("user_id")  # Agora está certo
-
-    async def _authorized_or_reply(self, interaction: discord.Interaction) -> bool:
-        if not is_approver(interaction.user):
-            await interaction.response.send_message("🔒 Você não tem permissão para essa ação.", ephemeral=True)
-            return False
-        return True
 
     @discord.ui.button(label="✔️ ACEITAR", style=discord.ButtonStyle.green)
     async def aceitar(self, interaction: discord.Interaction, button: Button):
-        if not await self._authorized_or_reply(interaction):
-            return
+        if not is_approver(interaction.user):
+            return await interaction.response.send_message("🔒 Sem permissão.", ephemeral=True)
+        await POS_SETAGEM(interaction, self.data)
 
-        await POS_SETAGEM(
-        interaction=interaction,
-        data=self.data,
-        membro_id=self.membro_id,
-        cargo_aprovado_id=APPROVED_ROLE_ID
-    )
-
-
-        await interaction.response.send_message(
-            f"SET aprovado! Cargo entregue para <@{self.membro_id}>.",
-            ephemeral=True
-        )
-
-async def POS_SETAGEM(interaction: discord.Interaction, data: dict, membro_id: int, cargo_aprovado_id: int):
+async def POS_SETAGEM(interaction: discord.Interaction, data: dict):
     guild = interaction.guild
 
-
-    # ================= OBTER O MEMBRO =================
-    member = guild.get_member(membro_id)
+    member = guild.get_member(data["user_id"])
     if member is None:
-        try:
-            member = await guild.fetch_member(membro_id)
-        except:
-            return await interaction.followup.send("❌ Não encontrei o membro no servidor.", ephemeral=True)
+        member = await guild.fetch_member(data["user_id"])
 
-    # ================= CARGO DE APROVADO =================
-    cargo_aprovado = guild.get_role(cargo_aprovado_id)
-    if cargo_aprovado:
-        try:
-            await member.add_roles(cargo_aprovado, reason="SET aprovado")
-        except Exception as e:
-            return await interaction.followup.send(f"❌ Erro ao adicionar cargo aprovado: {e}", ephemeral=True)
-    else:
-        return await interaction.followup.send("❌ Cargo aprovado não existe no servidor!", ephemeral=True)
-
-    # ================= REMOVER CARGO INICIAL =================
-    if CARGO_INICIAL:
-        role = guild.get_role(CARGO_INICIAL)
-        if role:
-            try:
-                await member.remove_roles(role)
-            except Exception as e:
-                print(f"[WARN] Falha ao remover cargo inicial: {e}")
-
-    # ================= CARGO DA FUNÇÃO =================
-    funcao_role_id = CARGO_MAP.get(data["cargo"])
-    if funcao_role_id:
-        role = guild.get_role(funcao_role_id)
-        if role:
-            try:
-                await member.add_roles(role, reason="SET aprovado - função")
-            except Exception as e:
-                print(f"[ERRO] Cargo função: {e}")
-
-    # ================= CARGO DA QUEBRADA =================
-    quebrada_role_id = QUEBRADA_MAP.get(data["quebrada"])
-    if quebrada_role_id:
-        role = guild.get_role(quebrada_role_id)
-        if role:
-            try:
-                await member.add_roles(role, reason="SET aprovado - quebrada")
-            except Exception as e:
-                print(f"[ERRO] Cargo quebrada: {e}")
-
-    # ================= CARGO FINAL DE APROVADO =================
-    approved_role = guild.get_role(1446982320547561595)
-    if approved_role:
-        try:
-            await member.add_roles(approved_role, reason="SET aprovado - Final")
-        except Exception as e:
-            print(f"[ERRO] Falha cargo final aprovado: {e}")
-
-
-    # =============== RENOMEAR ===============
-        await member.edit(
-        nick=NICK_FORMAT.format(
-            id=data["idd"],
-            vulgo=data["NDG"]
-        ),
+    await member.edit(
+        nick=NICK_FORMAT.format(id=data["idd"], vulgo=data["NDG"]),
         reason="SET aprovado"
     )
 
+    for role_id in (
+        APPROVED_ROLE_ID,
+        CARGO_MAP.get(data["PATENTE"]),
+        QUEBRADA_MAP.get(data["BTA"]),
+    ):
+        role = guild.get_role(role_id)
+        if role:
+            await member.add_roles(role)
 
-    # =============== DM ===============
-    try:
-        embed_dm = make_embed("✅ SET APROVADO",
-            f"Parabéns {member.mention}! Seu SET foi aprovado. Seja bem-vindo."
-        )
-        if os.path.exists(LOGO_PATH):
-            await member.send(embed=embed_dm, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-        else:
-            await member.send(embed=embed_dm)
-    except:
-        pass
+    log = guild.get_channel(LOG_CHANNEL_ID)
+    if log:
+        await log.send(embed=make_embed("🟢 SET APROVADO", member.mention))
 
-    # =============== LOG ===============
-    try:
-        log_ch = guild.get_channel(LOG_CHANNEL_ID)
-        if log_ch:
-            log_embed = make_embed(
-                "🟢 SET APROVADO",
-                f"Aprovado por: {interaction.user.mention}\nMembro: {member.mention}"
-            )
-            await log_ch.send(embed=log_embed)
-    except:
-        pass
+    ticket = guild.get_channel(data["ticket_channel_id"])
+    if ticket:
+        await ticket.delete(reason="SET aprovado")
 
-    # =============== FECHAR TICKET ===============
-    try:
-        ticket_ch = guild.get_channel(data["ticket_channel_id"])
-        if ticket_ch:
-            await ticket_ch.delete(reason="SET aprovado")
-    except Exception as e:
-        print(f"[WARN] erro ao fechar ticket: {e}")
+    await interaction.response.send_message("✔️ SET aprovado com sucesso.", ephemeral=True)
 
-    # remover pendência
-    remove_pending_by_ticket(data["ticket_channel_id"])
+# ================= SLASH COMMANDS =================
+@bot.tree.command(name="mensagem", description="Enviar uma mensagem como o bot")
+@app_commands.checks.has_permissions(administrator=True)
+async def slash_mensagem(interaction: discord.Interaction, canal: discord.TextChannel, texto: str):
+    await canal.send(texto)
+    await interaction.response.send_message("✅ Mensagem enviada.", ephemeral=True)
 
-    # desabilitar botões na mensagem original
-    try:
-        view = interaction.message.components
-        await interaction.message.edit(view=None)
-    except:
-        pass
+@bot.tree.command(name="ban", description="Banir um usuário")
+@app_commands.checks.has_permissions(ban_members=True)
+async def slash_ban(interaction: discord.Interaction, membro: discord.Member, motivo: str = "Sem motivo"):
+    await membro.ban(reason=motivo)
+    await interaction.response.send_message(f"🔨 {membro} banido.", ephemeral=True)
 
-    await interaction.followup.send("✔️ SET aprovado com sucesso.", ephemeral=True)
+@bot.tree.command(name="adv", description="Advertir um usuário")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def slash_adv(interaction: discord.Interaction, membro: discord.Member, motivo: str):
+    embed = discord.Embed(title="⚠️ Advertência", color=0xFFA500, timestamp=datetime.utcnow())
+    embed.add_field(name="Usuário", value=membro.mention)
+    embed.add_field(name="Staff", value=interaction.user.mention)
+    embed.add_field(name="Motivo", value=motivo, inline=False)
 
+    log = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log:
+        await log.send(embed=embed)
 
-    @discord.ui.button(label="❌ RECUSAR", style=discord.ButtonStyle.red)
-    async def recusar(self, interaction: discord.Interaction, button: Button):
-        if not await self._authorized_or_reply(interaction): return
+    await interaction.response.send_message("⚠️ Advertência registrada.", ephemeral=True)
 
-        guild = interaction.guild
-        member = guild.get_member(self.data["user_id"])
-        ticket_ch = guild.get_channel(self.data["ticket_channel_id"])
+@bot.tree.command(name="clearall", description="Apagar mensagens")
+@app_commands.checks.has_permissions(manage_messages=True)
+async def slash_clearall(interaction: discord.Interaction, quantidade: int):
+    if not 1 <= quantidade <= 100:
+        return await interaction.response.send_message("Use 1 a 100.", ephemeral=True)
+    await interaction.channel.purge(limit=quantidade)
+    await interaction.response.send_message(f"🧹 {quantidade} mensagens apagadas.", ephemeral=True)
 
-        # DM reprovação
-        try:
-            embed_dm = make_embed("❌ SET REPROVADO", f"{member.mention if member else self.data['user_name']}, seu SET foi reprovado. Revise e tente novamente.")
-            if os.path.exists(LOGO_PATH):
-                if member:
-                    try: await member.send(embed=embed_dm, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-                    except: pass
-            else:
-                if member:
-                    try: await member.send(embed=embed_dm)
-                    except: pass
-        except Exception:
-            pass
-
-        # log reprovação
-        try:
-            log_ch = guild.get_channel(LOG_CHANNEL_ID)
-            if log_ch:
-                log_embed = make_embed("🔴 SET REPROVADO", f"Reprovado por: {interaction.user.mention}\nMembro: <@{self.data['user_id']}>")
-                log_embed.add_field(name="Nome", value=self.data.get("nome","—"), inline=True)
-                log_embed.add_field(name="Vulgo", value=self.data.get("vulgo","—"), inline=True)
-                log_embed.add_field(name="ID", value=self.data.get("idd","—"), inline=True)
-                log_embed.add_field(name="Cargo", value=self.data.get("cargo","—"), inline=True)
-                log_embed.add_field(name="Quebrada", value=self.data.get("quebrada","—"), inline=True)
-                log_embed.add_field(name="Ticket", value=f"<#{self.data['ticket_channel_id']}>", inline=False)
-                if os.path.exists(LOGO_PATH):
-                    try:
-                        await log_ch.send(embed=log_embed, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-                    except:
-                        await log_ch.send(embed=log_embed)
-                else:
-                    await log_ch.send(embed=log_embed)
-        except Exception:
-            pass
-
-        # fechar ticket
-        try:
-            if ticket_ch:
-                await ticket_ch.delete(reason="SET reprovado - encerrando ticket")
-        except Exception:
-            pass
-
-        remove_pending_by_ticket(self.data["ticket_channel_id"])
-        self.clear_items()
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
-
-        await interaction.response.send_message("❌ SET reprovado e usuário notificado.", ephemeral=True)
-
-
-class FixedButtonView(View):
-    """Botão fixo postado em CANAL_BOTAO_FIXO para abrir tickets."""
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="📋 Abrir SET", style=discord.ButtonStyle.gray, custom_id="fixed_open_set")
-    async def open_set(self, interaction: discord.Interaction, button: Button):
-        member = interaction.user
-        guild = interaction.guild
-
-        # blacklist check
-        if member.id in blacklist.get("ids", []):
-            try:
-                await member.send("Você está impedido de abrir SET (blacklist).")
-            except:
-                pass
-            return await interaction.response.send_message("🚫 Você não pode abrir um SET.", ephemeral=True)
-
-        # evita duplicação de ticket
-        existing = discord.utils.get(guild.text_channels, name=f"set-{member.id}")
-        if existing:
-            return await interaction.response.send_message(f"Você já tem um ticket: {existing.mention}", ephemeral=True)
-
-        # cria canal na categoria configurada
-        category = discord.utils.get(guild.categories, id=CATEGORY_TICKETS) if CATEGORY_TICKETS else None
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False, send_messages=False),
-            member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(
-                read_messages=True,
-                send_messages=True,
-                manage_channels=True,
-                manage_permissions=True
-            )
-        }
-
-        try:
-            ticket = await guild.create_text_channel(
-                name=f"set-{member.id}",
-                category=category,
-                overwrites=overwrites,
-                reason="Ticket de SET criado"
-            )
-        except Exception as e:
-            print("\n❌ ERRO AO CRIAR TICKET:")
-            print(e)
-            print("──────────────────────────────────────────\n")
-            return await interaction.response.send_message(
-                "❌ Erro ao criar ticket. Dê permissão de **Gerenciar Canais** e **Gerenciar Permissões** ao bot.",
-                ephemeral=True
-            )
-
-        # atribui cargo inicial opcional
-        if CARGO_INICIAL:
-            try:
-                role_ini = guild.get_role(CARGO_INICIAL)
-                if role_ini:
-                    await member.add_roles(role_ini, reason="Recebeu cargo 'sem set' ao abrir ticket")
-            except Exception as e:
-                print("Erro ao dar cargo inicial:", e)
-
-        # envia embed inicial com selects
-        embed = make_embed("☯️ Iniciar SET", "Selecione sua Quebrada e Cargo abaixo para continuar.")
-        embed.set_thumbnail(url=f"attachment://{LOGO_FILENAME}")
-        view = SelectEtapa1(member, ticket)
-
-        try:
-            if os.path.exists(LOGO_PATH):
-                await ticket.send(embed=embed, view=view, file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-            else:
-                await ticket.send(embed=embed, view=view)
-        except:
-            await ticket.send(embed=embed, view=view)
-
-        await interaction.response.send_message(f"✅ Ticket criado: {ticket.mention}", ephemeral=True)
-
-# ===========================================================
-# ================== Painel administrativo ==================
-# ===========================================================
-class PanelView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="📋 Ver Pendentes", style=discord.ButtonStyle.blurple, custom_id="panel_pendentes")
-    async def ver_pendentes(self, interaction: discord.Interaction, button: Button):
-        # lista pendings simplificada
-        lines = []
-        for s in pending_sets.get("sets", []):
-            lines.append(f"- `{s.get('nome','?')}` / `{s.get('vulgo','?')}` — ticket: <#{s.get('ticket_channel_id')}> — staff msg id: `{s.get('staff_message_id')}`")
-        if not lines:
-            return await interaction.response.send_message("📭 Não há SETs pendentes.", ephemeral=True)
-        await interaction.response.send_message("📌 SETs pendentes:\n" + "\n".join(lines), ephemeral=True)
-
-    @discord.ui.button(label="⚠ Limpar Tickets Bugados", style=discord.ButtonStyle.red, custom_id="panel_limpar_bug")
-    async def limpar_bugados(self, interaction: discord.Interaction, button: Button):
-        # tenta apagar canais sem usuários
-        guild = interaction.guild
-        removed = 0
-        for s in list(pending_sets.get("sets", [])):
-            tid = s.get("ticket_channel_id")
-            ch = guild.get_channel(tid)
-            if ch is None:
-                remove_pending_by_ticket(tid)
-                removed += 1
-        await interaction.response.send_message(f"🧹 Removidos {removed} entradas pendentes inválidas.", ephemeral=True)
-
-    @discord.ui.button(label="🚫 Blacklist", style=discord.ButtonStyle.gray, custom_id="panel_blacklist")
-    async def open_blacklist(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("📂 Use os comandos `!blacklist add/remove/list` no chat para gerenciar.", ephemeral=True)
-
-# comandos de console/admin
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def resend_panel(ctx):
-    """Reenvia o painel fixo no canal configurado (admin)."""
-    ch = ctx.guild.get_channel(CANAL_BOTAO_FIXO) if CANAL_BOTAO_FIXO else None
-    if not ch:
-        return await ctx.send("Canal do botão fixo não configurado ou não encontrado.")
-    embed = make_embed("☯️ SISTEMA DE SET — PCC Zona Leste", "Clique no botão abaixo para iniciar seu SET.")
-    embed.set_thumbnail(url=f"attachment://{LOGO_FILENAME}")
-    try:
-        if os.path.exists(LOGO_PATH):
-            await ch.send(embed=embed, view=FixedButtonView(), file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-        else:
-            await ch.send(embed=embed, view=FixedButtonView())
-        await ctx.send("✅ Painel fixo enviado.")
-    except Exception as e:
-        await ctx.send(f"Erro ao enviar painel: {e}")
-
-# Blacklist commands (prefix-style)
-@bot.group(name="blacklist", invoke_without_command=True)
-@commands.has_permissions(manage_guild=True)
-async def bl_group(ctx):
-    await ctx.send("Use: `!blacklist add @user motivo` | `!blacklist remove @user` | `!blacklist list`")
-
-@bl_group.command(name="add")
-@commands.has_permissions(manage_guild=True)
-async def bl_add(ctx, member: discord.Member, *, motivo: str = "Sem motivo informado"):
-    if member.id in blacklist.get("ids", []):
-        return await ctx.send("Usuário já está na blacklist.")
-    blacklist["ids"].append(member.id)
-    _save_json(BLACKLIST_FILE, blacklist)
-    await ctx.send(f"✅ {member.mention} adicionado à blacklist. Motivo: {motivo}")
-
-@bl_group.command(name="remove")
-@commands.has_permissions(manage_guild=True)
-async def bl_remove(ctx, member: discord.Member):
-    if member.id not in blacklist.get("ids", []):
-        return await ctx.send("Usuário não está na blacklist.")
-    blacklist["ids"].remove(member.id)
-    _save_json(BLACKLIST_FILE, blacklist)
-    await ctx.send(f"✅ {member.mention} removido da blacklist.")
-
-@bl_group.command(name="list")
-@commands.has_permissions(manage_guild=True)
-async def bl_list(ctx):
-    if not blacklist.get("ids", []):
-        return await ctx.send("Blacklist vazia.")
-    lines = [f"<@{uid}> (`{uid}`)" for uid in blacklist["ids"]]
-    await ctx.send("Lista da blacklist:\n" + "\n".join(lines))
-
-# ===========================================================
-# ===================== Startup / Restore ===================
-# ===========================================================
+# ================= START =================
 @bot.event
 async def on_ready():
-    print(f"Bot online como {bot.user} (ID: {bot.user.id})")
-    # registrar views persistentes (botões que não expiram)
-    bot.add_view(FixedButtonView())
-    bot.add_view(PanelView())
-
-    # restaurar views para pendings (para permitir callbacks em mensagens de staff depois de restart)
-    restored = 0
-    guild = None
     try:
-        guild = bot.get_guild(GUILD_ID) if GUILD_ID else None
-    except Exception:
-        guild = None
-
-    for s in list(pending_sets.get("sets", [])):
-        staff_msg_id = s.get("staff_message_id")
-        if staff_msg_id is None:
-            continue
-        try:
-            if guild:
-                staff_channel = guild.get_channel(CANAL_SETS) if CANAL_SETS else None
-                if staff_channel:
-                    # Recria view com os dados e registra (callbacks serão chamados)
-                    view = ApproveDenyView(s)
-                    bot.add_view(view)  # registra a view para persistência
-                    restored += 1
-        except Exception:
-            pass
-
-    print(f"Restauradas {restored} pendências em memória.")
-
-    # postar botão fixo se ainda não houver (tenta evitar duplicação)
-    try:
-        if CANAL_BOTAO_FIXO:
-            ch = bot.get_channel(CANAL_BOTAO_FIXO)
-            if ch:
-                # procurar mensagens do bot recentes com o mesmo título (30 mensagens)
-                recent = [m async for m in ch.history(limit=30)]
-                already = False
-                for m in recent:
-                    if m.author == bot.user and m.embeds:
-                        for e in m.embeds:
-                            if e.title and "SISTEMA DE SET" in e.title:
-                                already = True
-                                break
-                    if already:
-                        break
-                if not already:
-                    embed = make_embed("☯️ SISTEMA DE SET — PCC Zona Leste", "Clique no botão abaixo para iniciar seu SET.")
-                    embed.set_thumbnail(url=f"attachment://{LOGO_FILENAME}")
-                    if os.path.exists(LOGO_PATH):
-                        await ch.send(embed=embed, view=FixedButtonView(), file=discord.File(LOGO_PATH, filename=LOGO_FILENAME))
-                    else:
-                        await ch.send(embed=embed, view=FixedButtonView())
+        synced = await bot.tree.sync()
+        print(f"✅ Slash sincronizados: {len(synced)}")
     except Exception as e:
-        print("Erro ao postar botão fixo:", e)
+        print("Erro ao sync slash:", e)
 
-# ===========================================================
-# ==================== Run Bot ==============================
-# ===========================================================
+    print(f"🤖 Bot online como {bot.user}")
+
 if __name__ == "__main__":
-    if TOKEN == "TOKEN":
-        print("ERRO: coloque seu TOKEN como variável de ambiente TOKEN ou no arquivo .env")
-    else:
-        bot.run(TOKEN)
-
-
-
+    bot.run(TOKEN)
