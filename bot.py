@@ -9,11 +9,11 @@ import sys
 
 sys.modules['audioop'] = None
 
+# ================= BOT =================
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================= CONFIGURAÇÃO =================
-
+# ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 
 CANALETA_SOLICITAR_SET_ID = 1343398652349255758
@@ -45,17 +45,27 @@ PATENTES_ESPECIALIZADAS = {
     }
 }
 
-# ================= ESTADO =================
-
 solicitacoes_abertas = {}
 
-# ================= FUNÇÕES =================
+# ================= VALIDAÇÃO =================
+def validar_cargos_companhia(guild: discord.Guild, companhia: str):
+    erros = []
+
+    cargo_companhia = CARGOS_COMPANHIA.get(companhia)
+    if not cargo_companhia or not guild.get_role(cargo_companhia):
+        erros.append(f"Cargo da companhia inválido: {companhia}")
+
+    for nome, role_id in PATENTES_ESPECIALIZADAS.get(companhia, {}).items():
+        if not guild.get_role(role_id):
+            erros.append(f"Patente inválida: {nome}")
+
+    return erros
+
 
 def get_patentes_para(companhia):
-    return PATENTES_ESPECIALIZADAS.get(companhia)
+    return PATENTES_ESPECIALIZADAS.get(companhia, {})
 
-# ================= VIEWS =================
-
+# ================= VIEW BOTÃO =================
 class TicketView(View):
     @discord.ui.button(label="Solicitar Funcional", style=discord.ButtonStyle.secondary, custom_id="iniciar_pedido")
     async def abrir_ticket(self, interaction: discord.Interaction, button: Button):
@@ -63,7 +73,22 @@ class TicketView(View):
         user = interaction.user
 
         if user.id in solicitacoes_abertas:
-            await interaction.response.send_message("⚠️ Você já possui um ticket aberto.", ephemeral=True)
+            await interaction.response.send_message(
+                "⚠️ Você já possui um ticket aberto.", ephemeral=True
+            )
+            return
+
+        # 🔒 valida cargos antes de criar ticket
+        erros = []
+        for companhia in COMPANHIAS_CHANNEL.keys():
+            erros.extend(validar_cargos_companhia(guild, companhia))
+
+        if erros:
+            await interaction.response.send_message(
+                "❌ Sistema de SET indisponível:\n\n" +
+                "\n".join(f"• {e}" for e in erros),
+                ephemeral=True
+            )
             return
 
         category = guild.get_channel(CATEGORIA_TICKET_ID)
@@ -78,28 +103,31 @@ class TicketView(View):
             overwrites=overwrites
         )
 
-        solicitacoes_abertas[user.id] = {
-            "canal_id": canal.id
-        }
+        solicitacoes_abertas[user.id] = {"canal_id": canal.id}
 
         view = View(timeout=None)
         view.add_item(SelectCompanhia(user.id))
-
         await canal.send(f"{user.mention}, selecione sua companhia:", view=view)
-        await interaction.response.send_message("🎟️ Ticket criado!", ephemeral=True)
 
+        await interaction.response.send_message(
+            "🎟️ Ticket criado com sucesso.", ephemeral=True
+        )
+
+# ================= SELECTS =================
 class SelectCompanhia(Select):
     def __init__(self, user_id):
         self.user_id = user_id
-        options = [discord.SelectOption(label=nome, value=nome) for nome in COMPANHIAS_CHANNEL]
+        options = [discord.SelectOption(label=n, value=n) for n in COMPANHIAS_CHANNEL]
         super().__init__(placeholder="Escolha sua companhia", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        patentes = get_patentes_para(self.values[0])
+        companhia = self.values[0]
+        patentes = get_patentes_para(companhia)
+
         view = View(timeout=None)
-        view.add_item(SelectPatente(self.user_id, self.values[0], patentes))
+        view.add_item(SelectPatente(self.user_id, companhia, patentes))
         await interaction.response.send_message(
-            f"Companhia **{self.values[0]}** selecionada. Agora escolha a patente:",
+            f"Companhia **{companhia}** selecionada. Escolha a patente:",
             view=view,
             ephemeral=True
         )
@@ -113,17 +141,21 @@ class SelectPatente(Select):
         super().__init__(placeholder="Escolha sua patente", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        nome = self.values[0]
+        patente_nome = self.values[0]
+        patente_id = self.patentes[patente_nome]
+        companhia_id = CARGOS_COMPANHIA[self.companhia]
+
         await interaction.response.send_modal(
             DadosPessoaisModal(
                 self.user_id,
                 self.companhia,
-                nome,
-                self.patentes[nome],
-                CARGOS_COMPANHIA[self.companhia]
+                patente_nome,
+                patente_id,
+                companhia_id
             )
         )
 
+# ================= MODAL =================
 class DadosPessoaisModal(Modal, title="Informe seus dados"):
     nome = TextInput(label="Nome Completo", required=True)
     passaporte = TextInput(label="Passaporte", required=True)
@@ -137,16 +169,15 @@ class DadosPessoaisModal(Modal, title="Informe seus dados"):
         self.companhia_id = companhia_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        solicitacoes_abertas[self.user_id] = {
-            "canal_id": solicitacoes_abertas[self.user_id]["canal_id"],
+        solicitacoes_abertas[self.user_id].update({
+            "nome": self.nome.value,
+            "passaporte": self.passaporte.value,
             "patente_id": self.patente_id,
-            "companhia_id": self.companhia_id,
-            "nome": self.nome.value.strip(),
-            "passaporte": self.passaporte.value.strip()
-        }
+            "companhia_id": self.companhia_id
+        })
 
         embed = Embed(
-            title="Solicitação de SET",
+            title="Solicitação de Funcional",
             description=(
                 f"**Nome:** {self.nome.value}\n"
                 f"**Passaporte:** {self.passaporte.value}\n"
@@ -158,8 +189,12 @@ class DadosPessoaisModal(Modal, title="Informe seus dados"):
 
         canal_logs = bot.get_channel(COMPANHIAS_CHANNEL[self.companhia])
         await canal_logs.send(embed=embed, view=ConfirmarOuFecharView(self.user_id))
-        await interaction.response.send_message("✅ Solicitação enviada.", ephemeral=True)
 
+        await interaction.response.send_message(
+            "✅ Solicitação enviada para avaliação.", ephemeral=True
+        )
+
+# ================= CONFIRMAÇÃO =================
 class ConfirmarOuFecharView(View):
     def __init__(self, user_id):
         super().__init__(timeout=None)
@@ -172,53 +207,56 @@ class ConfirmarOuFecharView(View):
             await interaction.response.send_message("❌ Solicitação não encontrada.", ephemeral=True)
             return
 
-        for item in self.children:
-            item.disabled = True
-        await interaction.message.edit(view=self)
-
         membro = interaction.guild.get_member(self.user_id)
-        if not membro:
-            return
 
+        novo_apelido = f"#{dados['passaporte']} | {dados['nome']}"
         try:
-            await membro.edit(nick=f"#{dados['passaporte']} | {dados['nome']}")
+            await membro.edit(nick=novo_apelido)
         except:
             pass
 
         novato = interaction.guild.get_role(CARGO_NOVATO_ID)
-        if novato in membro.roles:
+        if novato and novato in membro.roles:
             await membro.remove_roles(novato)
 
-        await membro.add_roles(
-            interaction.guild.get_role(dados['patente_id']),
-            interaction.guild.get_role(dados['companhia_id'])
+        cargo_patente = interaction.guild.get_role(dados['patente_id'])
+        cargo_companhia = interaction.guild.get_role(dados['companhia_id'])
+
+        if not cargo_patente or not cargo_companhia:
+            await interaction.response.send_message(
+                "❌ Erro ao aplicar cargos. Verifique os IDs.", ephemeral=True
+            )
+            return
+
+        await membro.add_roles(cargo_patente, cargo_companhia)
+
+        await interaction.response.send_message(
+            f"✅ SET confirmado. Nick alterado para **{novo_apelido}**.", ephemeral=True
         )
 
-        canal = interaction.guild.get_channel(dados["canal_id"])
+        canal = bot.get_channel(dados['canal_id'])
         if canal:
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)
             await canal.delete()
 
     @discord.ui.button(label="❌ Fechar Solicitação", style=discord.ButtonStyle.danger)
     async def fechar(self, interaction: discord.Interaction, button: Button):
         dados = solicitacoes_abertas.pop(self.user_id, None)
-        for item in self.children:
-            item.disabled = True
-        await interaction.message.edit(view=self)
+        await interaction.response.send_message("🗑️ Solicitação cancelada.", ephemeral=True)
 
         if dados:
-            canal = interaction.guild.get_channel(dados["canal_id"])
+            canal = bot.get_channel(dados['canal_id'])
             if canal:
-                await asyncio.sleep(3)
+                await asyncio.sleep(5)
                 await canal.delete()
 
 # ================= EVENTS =================
-
 @bot.event
 async def on_ready():
     print(f"🤖 Bot conectado como {bot.user}")
+
     canal = bot.get_channel(CANALETA_SOLICITAR_SET_ID)
-    async for msg in canal.history(limit=5):
+    async for msg in canal.history(limit=10):
         if msg.author == bot.user:
             await msg.delete()
 
@@ -235,6 +273,7 @@ async def on_ready():
 async def on_member_join(member):
     role = member.guild.get_role(CARGO_NOVATO_ID)
     if role:
-        await member.add_roles(role)
+        await member.add_roles(role, reason="Novo membro")
 
+# ================= START =================
 bot.run(TOKEN)
