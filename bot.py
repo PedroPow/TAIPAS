@@ -7,18 +7,17 @@ from discord.ext import commands
 from discord.ui import Modal, TextInput
 
 # ============================
-#   CONFIGURAÇÕES DO SERVIDOR
+#   CONFIGURAÇÕES
 # ============================
 GUILD_ID = 1343398652336537654
 
 VERIFY_CHANNEL_ID = 1343398652349255758
 LOG_CHANNEL_ID = 1450001931278745640
+PAINEL_CHANNEL_ID = 1450968994076033115
 
 ROLE_VERIFY_ID = 1343645401051431017
 ROLE_AUTOROLE_ID = 1345435302285545652
 ADMIN_ROLE_ID = 1449998328334123208
-
-PAINEL_CHANNEL_ID = 1450968994076033115
 
 # Advertências
 ID_CARGO_ADV1 = 1343788657760534619
@@ -29,11 +28,11 @@ ID_CARGO_BANIDO = 1343648181174665228
 CARGOS_AUTORIZADOS = [1449985109116715008]
 
 # ============================
-#         BOT
+# BOT
 # ============================
 intents = discord.Intents.default()
-intents.message_content = True
 intents.members = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 TOKEN = os.getenv("TOKEN")
@@ -41,50 +40,46 @@ TOKEN = os.getenv("TOKEN")
 bot._ready_sent = False
 
 # ============================
-#        LOGS
+# HELPERS
 # ============================
-async def enviar_log_embed(guild, embed):
-    if guild:
-        canal = guild.get_channel(LOG_CHANNEL_ID)
-        if canal:
-            await canal.send(embed=embed)
-
-async def enviar_log(guild, titulo, descricao):
-    if guild:
-        canal = guild.get_channel(LOG_CHANNEL_ID)
-        if canal:
-            embed = discord.Embed(title=titulo, description=descricao)
-            await canal.send(embed=embed)
-
-# ============================
-#      PERMISSÃO
-# ============================
-def has_authorized_role(member):
+def has_authorized_role(member: discord.Member):
     return any(r.id in CARGOS_AUTORIZADOS for r in member.roles)
 
-async def require_authorized(interaction):
+async def require_authorized(interaction: discord.Interaction):
     if not has_authorized_role(interaction.user):
-        await interaction.response.send_message("❌ Sem permissão.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Você não tem permissão.", ephemeral=True
+        )
         return False
     return True
 
+async def enviar_log_embed(guild, embed):
+    canal = guild.get_channel(LOG_CHANNEL_ID)
+    if canal:
+        await canal.send(embed=embed)
+
 # ============================
-#      VERIFY BUTTON
+# VERIFY BUTTON
 # ============================
 class VerifyButton(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="✅ Verificar", style=discord.ButtonStyle.success, custom_id="verify_button")
-    async def verify(self, interaction, button):
+    @discord.ui.button(label="✅ Verificar", style=discord.ButtonStyle.success)
+    async def verify(self, interaction: discord.Interaction, _):
         role = interaction.guild.get_role(ROLE_VERIFY_ID)
         if role in interaction.user.roles:
-            return await interaction.response.send_message("Já verificado.", ephemeral=True)
+            return await interaction.response.send_message(
+                "Você já está verificado.", ephemeral=True
+            )
+
         await interaction.user.add_roles(role)
-        await interaction.response.send_message("Verificado!", ephemeral=True)
+        await interaction.response.send_message(
+            "🎉 Verificado com sucesso!", ephemeral=True
+        )
 
 # ============================
-#        AUTOROLE
+# AUTOROLE
 # ============================
 @bot.event
 async def on_member_join(member):
@@ -93,52 +88,56 @@ async def on_member_join(member):
         await member.add_roles(role)
 
 # ============================
-#        CLEARALL
+# /clearall
 # ============================
-@bot.tree.command(name="clearall", guild=discord.Object(id=GUILD_ID))
-async def clearall(interaction):
+@bot.tree.command(name="clearall", description="Limpa o canal atual")
+async def clearall(interaction: discord.Interaction):
     if not await require_authorized(interaction):
         return
+
     await interaction.response.send_message("🧹 Limpando...", ephemeral=True)
     await interaction.channel.purge()
+    await interaction.channel.send("✅ Canal limpo.")
 
 # ============================
-#        MENSAGEM
+# MODAL /mensagem
 # ============================
-class MensagemModal(Modal, title="Mensagem"):
+class MensagemModal(Modal, title="Enviar mensagem"):
     conteudo = TextInput(label="Mensagem", style=discord.TextStyle.paragraph)
 
     async def on_submit(self, interaction):
-        if not has_authorized_role(interaction.user):
-            return
         await interaction.channel.send(self.conteudo.value)
-        await interaction.response.send_message("Enviado.", ephemeral=True)
+        await interaction.response.send_message("✅ Enviado.", ephemeral=True)
 
-@bot.tree.command(name="mensagem", guild=discord.Object(id=GUILD_ID))
-async def mensagem(interaction):
-    if await require_authorized(interaction):
-        await interaction.response.send_modal(MensagemModal())
+@bot.tree.command(name="mensagem", description="Enviar mensagem como bot")
+async def mensagem(interaction: discord.Interaction):
+    if not await require_authorized(interaction):
+        return
+    await interaction.response.send_modal(MensagemModal())
 
 # ============================
-#        ADV (CORRIGIDO)
+# /adv
 # ============================
-@bot.tree.command(name="adv", description="Advertir membro", guild=discord.Object(id=GUILD_ID))
-async def adv(interaction, membro: discord.Member, motivo: str):
+@bot.tree.command(name="adv", description="Aplicar advertência")
+async def adv(interaction: discord.Interaction, membro: discord.Member, motivo: str):
     if not await require_authorized(interaction):
         return
 
-    adv1 = interaction.guild.get_role(ID_CARGO_ADV1)
-    adv2 = interaction.guild.get_role(ID_CARGO_ADV2)
-    adv3 = interaction.guild.get_role(ID_CARGO_ADV3)
-    banido = interaction.guild.get_role(ID_CARGO_BANIDO)
+    guild = interaction.guild
+    adv1 = guild.get_role(ID_CARGO_ADV1)
+    adv2 = guild.get_role(ID_CARGO_ADV2)
+    adv3 = guild.get_role(ID_CARGO_ADV3)
+    banido = guild.get_role(ID_CARGO_BANIDO)
 
     if banido in membro.roles:
-        return await interaction.response.send_message("Já banido.", ephemeral=True)
+        return await interaction.response.send_message(
+            "🚫 Já está banido.", ephemeral=True
+        )
 
     if adv3 in membro.roles:
         await membro.remove_roles(adv3)
         await membro.add_roles(banido)
-        msg = "🚫 BANIDO"
+        msg = "🚫 BANIDO (4ª advertência)"
     elif adv2 in membro.roles:
         await membro.remove_roles(adv2)
         await membro.add_roles(adv3)
@@ -154,17 +153,7 @@ async def adv(interaction, membro: discord.Member, motivo: str):
     await interaction.response.send_message(msg, ephemeral=True)
 
 # ============================
-#        BAN
-# ============================
-@bot.tree.command(name="ban", guild=discord.Object(id=GUILD_ID))
-async def ban(interaction, membro: discord.Member, motivo: str):
-    if not await require_authorized(interaction):
-        return
-    await membro.ban(reason=motivo)
-    await interaction.response.send_message("Banido.", ephemeral=True)
-
-# ============================
-#        READY (FIX)
+# ON_READY
 # ============================
 @bot.event
 async def on_ready():
@@ -174,15 +163,27 @@ async def on_ready():
 
     print(f"🔥 Conectado como {bot.user}")
 
-    guild = discord.Object(id=GUILD_ID)
+    # 🔥 SYNC GLOBAL (SEM GUILD)
+    synced = await bot.tree.sync()
+    print(f"Slash sincronizados: {[c.name for c in synced]}")
 
-    # 🔥 FIX PRINCIPAL
-    bot.tree.clear_commands(guild=guild)
-    synced = await bot.tree.sync(guild=guild)
-
-    print("Slash sincronizados:", [c.name for c in synced])
+    guild = bot.get_guild(GUILD_ID)
+    if guild:
+        canal = guild.get_channel(VERIFY_CHANNEL_ID)
+        if canal:
+            await canal.purge(limit=5)
+            await canal.send(
+                embed=discord.Embed(
+                    title="Verificação",
+                    description="Clique para se verificar"
+                ),
+                view=VerifyButton()
+            )
 
 # ============================
-#        RUN
+# RUN
 # ============================
-bot.run(TOKEN)
+if not TOKEN:
+    print("❌ TOKEN não definido")
+else:
+    bot.run(TOKEN)
