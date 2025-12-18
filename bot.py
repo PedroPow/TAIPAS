@@ -28,7 +28,7 @@ ID_CARGO_BANIDO = 1343648181174665228
 
 # Autorizados para comandos (todos os slash commands usarão estes cargos)
 CARGOS_AUTORIZADOS = [
-    1444744188829761737,
+    1449985109116715008,
 ]
 
 # ============================
