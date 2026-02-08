@@ -9,7 +9,7 @@ from discord.ui import Modal, TextInput
 # ============================
 #   CONFIGURAÇÕES DO SERVIDOR
 # ============================
-GUILD_ID = 1343398652336537654
+GUILD_ID = 1343398652336537654 
 
 VERIFY_CHANNEL_ID = 1343398652349255758
 LOG_CHANNEL_ID = 1450001931278745640
